@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <title>RISQUE</title>
+  <style>
+    :root { color-scheme: dark; }
+    html { background: #000; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: #000;
+      color: #e5e7eb;
+      font-family: Arial, sans-serif;
+    }
+    a { color: #38bdf8; }
+    .panel {
+      width: min(440px, 92vw);
+      background: #1f2937;
+      border: 1px solid #374151;
+      border-radius: 12px;
+      padding: 20px;
+      box-sizing: border-box;
+    }
+    .panel h1 { margin: 0 0 6px; font-size: 1.35rem; }
+    .panel .sub { margin: 0 0 16px; color: #94a3b8; font-size: 14px; line-height: 1.4; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 10px 14px;
+      cursor: pointer;
+      font-weight: 700;
+      background: #374151;
+      color: #e5e7eb;
+    }
+    .hint { margin: 14px 0 0; font-size: 13px; color: #94a3b8; }
+    .tools-divider { margin: 18px 0 10px; padding-top: 14px; border-top: 1px solid #374151; font-size: 13px; color: #94a3b8; }
+  </style>
+  <script src="js/risque-external-urls.js"></script>
+</head>
+<body>
+  <main id="debug-home" class="panel" hidden>
+    <h1>RISQUE</h1>
+    <p class="sub">Debug / extras (<code>?menu=1</code>). Normal use opens the host login automatically.</p>
+    <div class="row">
+      <button type="button" id="btnGameLogin">Game login + TV tab</button>
+      <button type="button" id="btnRuntime">Runtime shell</button>
+      <button type="button" id="btnRisque">Host login only</button>
+      <button type="button" id="btnClearLogs">Clear logs</button>
+      <button type="button" id="btnMockConquer">Open game shell</button>
+      <button type="button" id="btnMockMaker">Mock Game Maker</button>
+    </div>
+    <p class="hint">
+      <a href="docs/manual.html">Manual</a> · <a href="docs/help.html">Help</a> ·
+      <a href="game.html">Runtime shell</a> · <a href="index.html">Launcher (redirect)</a>
+    </p>
+  </main>
+
+  <noscript>
+    <main class="panel">
+      <p>
+        JavaScript is required to open the host.
+        <a id="noscript-login" href="game.html">Open game</a>
+      </p>
+    </main>
+  </noscript>
+
+  <script>
+    (function () {
+      function gameLoginUrl() {
+        return typeof window.risqueLoginRecoveryUrl === "function"
+          ? window.risqueLoginRecoveryUrl()
+          : "game.html?phase=login&loginLegacyNext=game.html%3Fphase%3DplayerSelect%26selectKind%3DfirstCard&loginLoadRedirect=game.html%3Fphase%3Dcardplay%26legacyNext%3Dincome.html";
+      }
+
+      function openPublicTv() {
+        try {
+          try {
+            localStorage.removeItem("risquePublicMirrorState");
+            localStorage.removeItem("risquePublicCursorMirror");
+          } catch (eClr) {}
+          var u = new URL("game.html", window.location.href);
+          u.searchParams.set("display", "public");
+          u.searchParams.set("tvBootstrap", "1");
+          u.searchParams.delete("phase");
+          u.searchParams.delete("legacyNext");
+          u.searchParams.delete("selectKind");
+          u.searchParams.delete("loginLegacyNext");
+          u.searchParams.delete("loginLoadRedirect");
+          u.searchParams.delete("next");
+          window.open(u.pathname + u.search + u.hash, "risquePublicBoard", "noopener,noreferrer");
+        } catch (e0) {}
+      }
+
+      var ns = document.getElementById("noscript-login");
+      if (ns) ns.href = gameLoginUrl();
+
+      if (!/\bmenu=1\b/.test(location.search)) {
+        window.location.replace(gameLoginUrl());
+        return;
+      }
+
+      var dbg = document.getElementById("debug-home");
+      if (dbg) dbg.hidden = false;
+
+      document.getElementById("btnGameLogin").onclick = function () {
+        openPublicTv();
+        window.location.href = gameLoginUrl();
+      };
+      document.getElementById("btnRuntime").onclick = function () {
+        window.location.href = "game.html";
+      };
+      document.getElementById("btnRisque").onclick = function () {
+        window.location.href = gameLoginUrl();
+      };
+      document.getElementById("btnClearLogs").onclick = function () {
+        try {
+          localStorage.removeItem("gameLogs");
+          localStorage.removeItem("risqueNavLog");
+        } catch (e) {}
+        alert("Cleared gameLogs and risqueNavLog.");
+      };
+      document.getElementById("btnMockConquer").onclick = function () {
+        window.location.href = "game.html";
+      };
+      document.getElementById("btnMockMaker").onclick = function () {
+        window.location.href = "Mock Game Maker/index.html";
+      };
+    })();
+  </script>
+</body>
+</html>
