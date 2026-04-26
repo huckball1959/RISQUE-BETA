@@ -173,10 +173,12 @@
         if (recomputed && recomputed.length > 0) {
           gameState.pendingNewContinents = recomputed;
         } else if (Array.isArray(prevPending) && prevPending.length > 0) {
-          /* keep */
+          gameState.pendingNewContinents = prevPending;
         } else {
           gameState.pendingNewContinents = recomputed || [];
         }
+        /* computePendingNewContinentsForConquest already filters attack-entry baseline; re-apply if state was only adjusted above. */
+        gameState.pendingNewContinents = window.gameUtils.computePendingNewContinentsForConquest(gameState);
       }
       if (!Object.keys(gameState.continentsSnapshot || {}).length) {
         logToStorage("WARNING: continentsSnapshot empty — deploy/attack should set baseline before dice", {
