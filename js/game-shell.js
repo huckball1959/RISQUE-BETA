@@ -20,7 +20,8 @@
   var MAX_ROUND_AUTOSAVES = 10;
   /** In-memory only: cleared on every reload / hard refresh; round JSON writes use File System Access API. */
   var __risqueRoundAutosaveDirHandle = null;
-  var __risqueRoundAutosaveSetupPromptShownThisLoad = false;
+  var __risqueRoundAutosavePickerBusy = false;
+  var __risqueRoundAutosaveCornerHintShown = false;
   var appEl = document.getElementById("app");
   var phaseLabelEl = document.getElementById("phaseLabel");
   var stageHost = document.querySelector(".runtime-stage-host");
@@ -107,7 +108,7 @@
     typeof window.risqueLoginRecoveryUrl === "function"
       ? window.risqueLoginRecoveryUrl()
       : "game.html?phase=login&loginLegacyNext=game.html%3Fphase%3DplayerSelect%26selectKind%3DfirstCard&loginLoadRedirect=game.html%3Fphase%3Dcardplay%26legacyNext%3Dincome.html";
-  var BOARD_CORNER_TOOLS_VERSION = "8";
+  var BOARD_CORNER_TOOLS_VERSION = "9";
 
   function risqueDoc(name) {
     if (typeof window.risqueResolveDocUrl === "function") {
@@ -4888,22 +4889,22 @@
     document.head.appendChild(s);
   }
 
-  function shouldOfferRoundAutosaveSetupThisBoot() {
+  function shouldOfferRoundAutosaveSetup(opts) {
+    opts = opts || {};
     if (window.risqueDisplayIsPublic) return false;
     if (typeof window.showDirectoryPicker !== "function") return false;
     /* file:// often blocks directory picker; HTTPS / localhost is the supported path */
     if (window.location.protocol === "file:") return false;
+    if (opts.force) return true;
     if (forcedPhase === "login" && (!state.players || !state.players.length)) {
       return false;
     }
     return true;
   }
 
-  function showRoundAutosaveSetupPromptOncePerLoad() {
-    if (!shouldOfferRoundAutosaveSetupThisBoot()) return;
-    if (__risqueRoundAutosaveSetupPromptShownThisLoad) return;
-    __risqueRoundAutosaveSetupPromptShownThisLoad = true;
-    if (document.getElementById("risque-round-autosave-setup")) return;
+  function mountRoundAutosaveSetupOverlay(opts) {
+    if (!shouldOfferRoundAutosaveSetup(opts)) return;
+    removeRoundAutosaveSetupOverlay();
     injectRoundAutosaveSetupStylesOnce();
     var ov = document.createElement("div");
     ov.id = "risque-round-autosave-setup";
@@ -4928,9 +4929,10 @@
     var skip = document.getElementById("risque-ras-skip");
     if (choose) {
       choose.addEventListener("click", function () {
-        var pickerOpts = { id: "risque-round-autosaves" };
+        if (__risqueRoundAutosavePickerBusy) return;
+        __risqueRoundAutosavePickerBusy = true;
         window
-          .showDirectoryPicker(pickerOpts)
+          .showDirectoryPicker()
           .then(function (dir) {
             __risqueRoundAutosaveDirHandle = dir;
             removeRoundAutosaveSetupOverlay();
@@ -4947,6 +4949,9 @@
                   ")."
               );
             }
+          })
+          .finally(function () {
+            __risqueRoundAutosavePickerBusy = false;
           });
       });
     }
@@ -4959,11 +4964,15 @@
     }
   }
 
-  function scheduleRoundAutosaveSetupPrompt() {
-    if (!shouldOfferRoundAutosaveSetupThisBoot()) return;
-    setTimeout(function () {
-      showRoundAutosaveSetupPromptOncePerLoad();
-    }, 1500);
+  function maybeHintRoundAutosaveFolderOnce() {
+    if (window.risqueDisplayIsPublic) return;
+    if (__risqueRoundAutosaveCornerHintShown) return;
+    if (typeof window.showDirectoryPicker !== "function") return;
+    if (window.location.protocol === "file:") return;
+    __risqueRoundAutosaveCornerHintShown = true;
+    setBoardCornerMsg(
+      "Optional: tap AUTOSAVE on the map to pick a folder for per-round JSON files (each full round). Ctrl+S still saves a snapshot."
+    );
   }
 
   function writeRoundAutosaveToDisk(gs) {
@@ -6069,6 +6078,7 @@
       '<button type="button" id="risque-board-new-game" class="risque-board-op-btn risque-board-op-btn--collapsible-row">NEW GAME</button>' +
       '<button type="button" id="risque-board-load" class="risque-board-op-btn risque-board-op-btn--collapsible-row">LOAD GAME</button>' +
       '<button type="button" id="risque-board-save" class="risque-board-op-btn risque-board-op-btn--collapsible-row">SAVE GAME</button>' +
+      '<button type="button" id="risque-board-round-autosave" class="risque-board-op-btn risque-board-op-btn--collapsible-row" title="Pick a folder for automatic JSON saves at the start of each full round (HTTPS / localhost; not file://)">AUTOSAVE</button>' +
       '<button type="button" id="risque-board-grace" class="risque-board-op-btn risque-board-op-btn--collapsible-row" title="Host: roll back to the start of this or the previous player’s cardplay turn (control panel)">GRACE</button>' +
       '<button type="button" id="risque-board-open-public" class="risque-board-op-btn risque-board-op-btn--collapsible-row risque-board-open-public" title="Open the public / TV board in a new window">PUBLIC</button>' +
       '<button type="button" id="risque-board-hide-top-row" class="risque-board-op-btn risque-board-hide-top-row-btn" title="Hide or show the other controls on this row" aria-pressed="false">HIDE BUTTONS</button>' +
@@ -6087,7 +6097,7 @@
       wrap.setAttribute("data-risque-corner-v", BOARD_CORNER_TOOLS_VERSION);
       wrap.setAttribute(
         "aria-label",
-        "New game, load game, save game, grace rollback, public board, hide row; manual and help"
+        "New game, load game, save game, round autosave folder, grace rollback, public board, hide row; manual and help"
       );
       wrap.innerHTML = cornerInner;
       canvas.appendChild(wrap);
@@ -6095,7 +6105,7 @@
       wrap.setAttribute("data-risque-corner-v", BOARD_CORNER_TOOLS_VERSION);
       wrap.setAttribute(
         "aria-label",
-        "New game, load game, save game, grace rollback, public board, hide row; manual and help"
+        "New game, load game, save game, round autosave folder, grace rollback, public board, hide row; manual and help"
       );
       wrap.innerHTML = cornerInner;
       boardCornerToolsWired = false;
@@ -6117,6 +6127,12 @@
     if (saveBtn) {
       saveBtn.addEventListener("click", function () {
         triggerHostQuickSave("map corner");
+      });
+    }
+    var autosaveCornerBtn = document.getElementById("risque-board-round-autosave");
+    if (autosaveCornerBtn) {
+      autosaveCornerBtn.addEventListener("click", function () {
+        mountRoundAutosaveSetupOverlay({ force: true });
       });
     }
     if (loadBtn && loadInput) {
@@ -6262,6 +6278,7 @@
         );
       }
     }
+    maybeHintRoundAutosaveFolderOnce();
   }
 
   /** After player select / deal / deploy1: corner tools, map, HUD stats, unified setup column; optional onDone after DOM is ready */
@@ -6396,7 +6413,6 @@
     }
   }
   logEvent("Runtime boot", { phase: state.phase, currentPlayer: state.currentPlayer, round: state.round });
-  scheduleRoundAutosaveSetupPrompt();
 
   publicMirrorLastPhase = window.risqueDisplayIsPublic ? state.phase : null;
   syncPhaseDataAttr(state);
