@@ -757,6 +757,11 @@
         delete gameState.risqueConquestChainPaidContinents;
         clearedConquestIncome = true;
       }
+      if (gameState.risqueConquestAttackEntryTurnKey != null || gameState.risqueConquestAttackEntryContinents) {
+        delete gameState.risqueConquestAttackEntryTurnKey;
+        delete gameState.risqueConquestAttackEntryContinents;
+        clearedConquestIncome = true;
+      }
       if (clearedConquestIncome) {
         try {
           localStorage.setItem("gameState", JSON.stringify(gameState));

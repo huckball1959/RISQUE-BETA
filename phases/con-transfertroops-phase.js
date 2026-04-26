@@ -400,6 +400,8 @@
         delete gs.risqueConquestChainActive;
         delete gs.risqueConquestChainPaidContinents;
         delete gs.risqueRuntimeCardplayIncomeMode;
+        delete gs.risqueConquestAttackEntryTurnKey;
+        delete gs.risqueConquestAttackEntryContinents;
         try {
           persist(gs);
         } catch (eSave) {

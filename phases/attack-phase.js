@@ -214,6 +214,15 @@
       /* ignore */
     }
 
+    if (
+      window.gameState &&
+      !window.risqueDisplayIsPublic &&
+      window.gameUtils &&
+      typeof window.gameUtils.captureRisqueConquestAttackEntryContinentsIfNeeded === "function"
+    ) {
+      window.gameUtils.captureRisqueConquestAttackEntryContinentsIfNeeded(window.gameState);
+    }
+
     if (typeof window.initAttackPhase === "function") {
       window.initAttackPhase(attackMountEpoch);
     }

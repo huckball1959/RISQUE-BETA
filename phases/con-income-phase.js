@@ -4,7 +4,8 @@
  * continents newly completed since attack entry (continentsSnapshot) vs current board.
  * When pendingNew is empty after recompute, apply the same territory + held-continent reinforcement as
  * phases/income.js — otherwise a played book (+10) could be the only payout (old fallback only ran when
- * total was &lt; 1).
+ * total was &lt; 1). Continents fully held before the first attack mount this turn
+ * (risqueConquestAttackEntryContinents) are excluded so pre-campaign income is not duplicated mid-chain.
  */
 (function () {
   "use strict";
@@ -200,7 +201,8 @@
         ownedContinents: ownedContinents,
         pendingNew: pendingNew,
         collectionCounts: gameState.continentCollectionCounts,
-        baselineLocked: !!gameState.risqueConquestIncomeBaselineLocked
+        baselineLocked: !!gameState.risqueConquestIncomeBaselineLocked,
+        attackEntryContinents: gameState.risqueConquestAttackEntryContinents || []
       });
       var continentDetails = "";
       var continentRowsForMirror = [];
@@ -232,6 +234,10 @@
         window.gameUtils &&
         typeof window.gameUtils.getPlayerContinents === "function" &&
         typeof window.gameUtils.getNextContinentValue === "function";
+      var attackEntryContinents = gameState.risqueConquestAttackEntryContinents || [];
+      var skipHeldContinentFromPreAttackBaseline =
+        attackEntryContinents.length > 0 &&
+        (gameState.risqueRuntimeCardplayIncomeMode === "conquer" || !!gameState.risqueConquestChainActive);
 
       if (useStandardHeldSupplement) {
         territoryBonusRow = Math.max(Math.floor(territoryCount / 3), 3);
@@ -252,6 +258,9 @@
             }
           }
           if (cKey == null) continue;
+          if (skipHeldContinentFromPreAttackBaseline && attackEntryContinents.indexOf(cKey) !== -1) {
+            continue;
+          }
           var cVal = window.gameUtils.getNextContinentValue(cKey, gameState.continentCollectionCounts[cKey] || 0);
           if (cVal > 0) {
             continentBonusHeld += cVal;

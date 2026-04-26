@@ -232,6 +232,57 @@ window.gameUtils = {
     }
   },
   /**
+   * Continent keys the player fully controls on the current board (runtime gameState.continents when set).
+   */
+  listFullyHeldContinentKeysForPlayer: function (gameState, player) {
+    var out = [];
+    try {
+      if (!gameState || !player || !Array.isArray(player.territories)) return out;
+      var self = this;
+      Object.keys(this.continents || {}).forEach(function (contKey) {
+        var ids = self.getContinentTerritoryIdsForBoard(gameState, contKey);
+        if (!ids.length) return;
+        var hasAll = ids.every(function (tid) {
+          return player.territories.some(function (pt) {
+            return self.territoryNameFromEntry(pt) === tid;
+          });
+        });
+        if (hasAll) out.push(contKey);
+      });
+    } catch (eList) {
+      /* ignore */
+    }
+    return out;
+  },
+  /**
+   * Once per current player per round at first attack-phase mount: continents they already held entirely
+   * before rolling dice this turn. Con-income uses this so mid-campaign con-income does not re-pay
+   * continents already collected at pre-campaign income (cardplay snapshot can lag cardplay captures).
+   */
+  captureRisqueConquestAttackEntryContinentsIfNeeded: function (gameState) {
+    try {
+      if (!gameState || (typeof window !== "undefined" && window.risqueDisplayIsPublic)) return;
+      var cur = gameState.currentPlayer;
+      var tk = (Number(gameState.round) || 1) + "|" + String(cur || "");
+      if (
+        gameState.risqueConquestAttackEntryTurnKey === tk &&
+        Array.isArray(gameState.risqueConquestAttackEntryContinents)
+      ) {
+        return;
+      }
+      var cp =
+        gameState.players &&
+        gameState.players.find(function (p) {
+          return p && p.name === cur;
+        });
+      if (!cp || !Array.isArray(cp.territories)) return;
+      gameState.risqueConquestAttackEntryTurnKey = tk;
+      gameState.risqueConquestAttackEntryContinents = this.listFullyHeldContinentKeysForPlayer(gameState, cp);
+    } catch (eCap) {
+      /* ignore */
+    }
+  },
+  /**
    * Prefer gameState.pendingNewContinents when set (e.g. elimination); else diff full control vs continentsSnapshot.
    */
   computePendingNewContinentsForConquest: function(gameState) {
@@ -241,8 +292,13 @@ window.gameUtils = {
       const notPaidInChain = function (k) {
         return paidChain.indexOf(k) === -1;
       };
+      const attackEntry = gameState.risqueConquestAttackEntryContinents || [];
+      const notHeldBeforeAttackPhase = function (k) {
+        if (!attackEntry.length) return true;
+        return attackEntry.indexOf(k) === -1;
+      };
       if (Array.isArray(gameState.pendingNewContinents) && gameState.pendingNewContinents.length > 0) {
-        return gameState.pendingNewContinents.slice().filter(notPaidInChain);
+        return gameState.pendingNewContinents.slice().filter(notPaidInChain).filter(notHeldBeforeAttackPhase);
       }
       const cur = gameState.currentPlayer;
       const cp = gameState.players && gameState.players.find(p => p && p.name === cur);
@@ -259,7 +315,9 @@ window.gameUtils = {
         );
         if (hasAll) owned.push(contKey);
       });
-      return owned.filter(k => snapKeys.indexOf(k) === -1 && notPaidInChain(k));
+      return owned.filter(
+        k => snapKeys.indexOf(k) === -1 && notPaidInChain(k) && notHeldBeforeAttackPhase(k)
+      );
     } catch (e) {
       return [];
     }
@@ -276,6 +334,8 @@ window.gameUtils = {
       delete gameState.risqueRuntimeCardplayIncomeMode;
       delete gameState.risqueConquestChainPaidContinents;
       delete gameState.risqueSkipContinentSnapshotRefresh;
+      delete gameState.risqueConquestAttackEntryTurnKey;
+      delete gameState.risqueConquestAttackEntryContinents;
     } catch (e) {
       /* ignore */
     }
