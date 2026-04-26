@@ -55,6 +55,8 @@
   var skipCardplayEntryHandoff = String(query.get("postReceive") || "") === "1";
   var POST_RECEIVE_CARDPLAY_BLACKOUT_KEY = "risquePostReceiveCardplayBlackout";
   var POST_RECEIVE_BLACKOUT_STYLE_ID = "risque-post-receive-blackout-style";
+  var OUTGOING_NAV_BLACKOUT_ID = "risque-outgoing-nav-blackout";
+  var VT_SUPPRESS_ONE_SHOT_ID = "risque-vt-suppress-one-shot";
 
   function injectPostReceiveBlackoutStylesOnce() {
     if (document.getElementById(POST_RECEIVE_BLACKOUT_STYLE_ID)) return;
@@ -89,6 +91,36 @@
     } catch (eMark) {
       /* ignore */
     }
+    /*
+     * Outgoing page: cross-document view transitions (game.css) snapshot the old document until
+     * the new one paints — that snapshot was briefly showing receive-card. Force black + opt out
+     * of VT for this navigation so the handoff never leaks private UI.
+     */
+    try {
+      if (window.risqueDisplayIsPublic) return;
+      if (!document.getElementById(VT_SUPPRESS_ONE_SHOT_ID)) {
+        var vt = document.createElement("style");
+        vt.id = VT_SUPPRESS_ONE_SHOT_ID;
+        vt.textContent = "@view-transition { navigation: none !important; }";
+        document.head.appendChild(vt);
+      }
+      if (!document.getElementById(OUTGOING_NAV_BLACKOUT_ID) && document.body) {
+        var os = document.createElement("style");
+        os.setAttribute("data-risque-outgoing-nav-blackout", "1");
+        os.textContent =
+          "#" +
+          OUTGOING_NAV_BLACKOUT_ID +
+          "{position:fixed;inset:0;z-index:2147483647;margin:0;padding:0;background:#000!important;pointer-events:none;}";
+        document.head.appendChild(os);
+        var od = document.createElement("div");
+        od.id = OUTGOING_NAV_BLACKOUT_ID;
+        od.setAttribute("aria-hidden", "true");
+        document.body.appendChild(od);
+        void od.offsetHeight;
+      }
+    } catch (eOut) {
+      /* ignore */
+    }
   };
 
   function maybeStartPostReceiveBlackoutFromSession() {
@@ -100,7 +132,20 @@
     } catch (eRead) {
       return;
     }
-    window.__risquePostReceiveBlackoutHide = showPostReceiveCardplayBlackout();
+    if (document.getElementById("risque-post-receive-blackout")) {
+      window.__risquePostReceiveBlackoutHide = function hidePostReceiveCardplayBlackoutEarly() {
+        var x = document.getElementById("risque-post-receive-blackout");
+        if (x && x.parentNode) {
+          x.parentNode.removeChild(x);
+        }
+        var stEarly = document.getElementById("risque-post-receive-blackout-early-inline");
+        if (stEarly && stEarly.parentNode) {
+          stEarly.parentNode.removeChild(stEarly);
+        }
+      };
+    } else {
+      window.__risquePostReceiveBlackoutHide = showPostReceiveCardplayBlackout();
+    }
   }
   /*
    * Public board must follow mirrored gameState.phase only. A stale ?phase=attack (or any host URL
@@ -6989,12 +7034,17 @@
       });
       refreshVisuals("Card play mounted");
       if (typeof window.__risquePostReceiveBlackoutHide === "function") {
-        try {
-          window.__risquePostReceiveBlackoutHide();
-        } catch (eBlk) {
-          /* ignore */
-        }
+        var hideBlk = window.__risquePostReceiveBlackoutHide;
         window.__risquePostReceiveBlackoutHide = null;
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () {
+            try {
+              hideBlk();
+            } catch (eBlk) {
+              /* ignore */
+            }
+          });
+        });
       }
     }
 

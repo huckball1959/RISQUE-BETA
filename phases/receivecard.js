@@ -443,6 +443,9 @@
     var navWithSkip = risqueApplyConquestEliminationContinueMutations();
     if (!navWithSkip) return;
     function goConquestCardplay() {
+      if (typeof window.risqueMarkPostReceiveCardplayBlackout === "function") {
+        window.risqueMarkPostReceiveCardplayBlackout();
+      }
       if (window.risqueNavigateWithFade) {
         window.risqueNavigateWithFade(navWithSkip);
       } else {
