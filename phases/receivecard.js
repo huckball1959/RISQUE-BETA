@@ -208,8 +208,10 @@
     gameState.cardEarnedViaCardplay = false;
     gameState.cardAwardedThisTurn = false;
     gameState.conqueredThisTurn = false;
+    var completedRound = 0;
     if (nextIndex === 0) {
-      gameState.round = (gameState.round || 1) + 1;
+      completedRound = Number(gameState.round) || 1;
+      gameState.round = completedRound + 1;
     }
     gameState.phase = "cardplay";
     receiveCardLog("Advanced turn", {
@@ -217,7 +219,7 @@
       round: gameState.round,
       phase: gameState.phase
     });
-    return true;
+    return completedRound;
   }
 
   function receiveCardRunDisplay() {
@@ -460,7 +462,8 @@
       receiveCardEndTurnConquestElimination();
       return;
     }
-    if (!receiveCardAdvanceTurn()) return;
+    var completedRound = receiveCardAdvanceTurn();
+    if (completedRound === false) return;
     var gsAfter = window.gameState || {};
     try {
       delete gsAfter.risqueControlVoice;
@@ -478,6 +481,10 @@
       localStorage.setItem("gameState", JSON.stringify(gsAfter));
     } catch (e) {
       /* ignore */
+    }
+    if (completedRound > 0 && typeof window.risqueRoundAutosaveOnRoundComplete === "function") {
+      var completedFromState = (Number(gsAfter.round) || 0) - 1;
+      window.risqueRoundAutosaveOnRoundComplete(gsAfter, completedFromState > 0 ? completedFromState : completedRound);
     }
     if (typeof window.risqueHostReplaceShellGameState === "function") {
       window.risqueHostReplaceShellGameState(gsAfter);
