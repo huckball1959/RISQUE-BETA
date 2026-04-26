@@ -264,9 +264,11 @@ window.gameUtils = {
       if (!gameState || (typeof window !== "undefined" && window.risqueDisplayIsPublic)) return;
       var cur = gameState.currentPlayer;
       var tk = (Number(gameState.round) || 1) + "|" + String(cur || "");
+      /* Autosave / partial state can store matching turnKey with [] — must recompute or filters never apply. */
       if (
         gameState.risqueConquestAttackEntryTurnKey === tk &&
-        Array.isArray(gameState.risqueConquestAttackEntryContinents)
+        Array.isArray(gameState.risqueConquestAttackEntryContinents) &&
+        gameState.risqueConquestAttackEntryContinents.length > 0
       ) {
         return;
       }

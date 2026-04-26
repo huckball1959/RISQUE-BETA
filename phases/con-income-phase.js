@@ -197,6 +197,10 @@
         return snapshot[key];
       });
       var pendingNew = gameState.pendingNewContinents || [];
+      var attackEntryContinents = gameState.risqueConquestAttackEntryContinents || [];
+      var skipAttackBaselineContinents =
+        attackEntryContinents.length > 0 &&
+        (gameState.risqueRuntimeCardplayIncomeMode === "conquer" || !!gameState.risqueConquestChainActive);
       logToStorage("Income continent trace", {
         snapshotOwned: snapshotOwned,
         turnStartKeys: Object.keys(gameState.risqueTurnStartContinentsSnapshot || {}),
@@ -204,12 +208,17 @@
         pendingNew: pendingNew,
         collectionCounts: gameState.continentCollectionCounts,
         baselineLocked: !!gameState.risqueConquestIncomeBaselineLocked,
-        attackEntryContinents: gameState.risqueConquestAttackEntryContinents || []
+        attackEntryContinents: attackEntryContinents,
+        skipAttackBaselineContinents: skipAttackBaselineContinents
       });
       var continentDetails = "";
       var continentRowsForMirror = [];
       var cdn = window.gameUtils && window.gameUtils.continentDisplayNames;
       pendingNew.forEach(function (key) {
+        if (skipAttackBaselineContinents && attackEntryContinents.indexOf(key) !== -1) {
+          logToStorage("Con-income skip pending continent (held before attack this turn)", { key: key });
+          return;
+        }
         var collectionCount = gameState.continentCollectionCounts[key] || 0;
         var bonus =
           typeof window.gameUtils.getContinentConquestIncomeValue === "function"
@@ -236,10 +245,7 @@
         window.gameUtils &&
         typeof window.gameUtils.getPlayerContinents === "function" &&
         typeof window.gameUtils.getNextContinentValue === "function";
-      var attackEntryContinents = gameState.risqueConquestAttackEntryContinents || [];
-      var skipHeldContinentFromPreAttackBaseline =
-        attackEntryContinents.length > 0 &&
-        (gameState.risqueRuntimeCardplayIncomeMode === "conquer" || !!gameState.risqueConquestChainActive);
+      var skipHeldContinentFromPreAttackBaseline = skipAttackBaselineContinents;
 
       if (useStandardHeldSupplement) {
         territoryBonusRow = Math.max(Math.floor(territoryCount / 3), 3);

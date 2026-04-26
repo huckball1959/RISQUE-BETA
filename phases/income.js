@@ -498,6 +498,12 @@
                 }
               }
             }
+            try {
+              delete gameState.risqueConquestAttackEntryTurnKey;
+              delete gameState.risqueConquestAttackEntryContinents;
+            } catch (eAtkClr) {
+              /* ignore */
+            }
             gameState.bookPlayedThisTurn = false;
             currentPlayer.bookValue = 0;
             localStorage.setItem("gameState", JSON.stringify(sanitizeGameState(gameState)));
