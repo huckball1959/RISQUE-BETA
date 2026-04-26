@@ -459,7 +459,7 @@
           if (index < cardPositions.length && window.gameUtils.cardNames.includes(card.name)) {
             const pos = cardPositions[index];
             cardHtml += `
-              <img class="card" src="assets/images/cards/${card.name}.webp" style="left: ${pos.x}px; top: ${pos.y}px; width: ${pos.width}px; height: ${pos.height}px;" data-card="${card.name}" data-id="${card.id}" alt="${card.name.replace(/_/g, " ")} card">
+              <img class="card" src="assets/images/Cards/${card.name}.webp" style="left: ${pos.x}px; top: ${pos.y}px; width: ${pos.width}px; height: ${pos.height}px;" data-card="${card.name}" data-id="${card.id}" alt="${card.name.replace(/_/g, " ")} card">
             `;
           }
         });
@@ -1047,7 +1047,7 @@
         if (!window.gameUtils.cardNames.includes(card.name)) return;
         const pos = cardPositions[index];
         cardHtml += `
-          <img class="card" src="assets/images/cards/${card.name}.webp" style="left: ${pos.x}px; top: ${pos.y}px; width: ${pos.width}px; height: ${pos.height}px;" data-card="${card.name}" data-id="${card.id}" alt="${card.name.replace(/_/g, " ")} card">
+          <img class="card" src="assets/images/Cards/${card.name}.webp" style="left: ${pos.x}px; top: ${pos.y}px; width: ${pos.width}px; height: ${pos.height}px;" data-card="${card.name}" data-id="${card.id}" alt="${card.name.replace(/_/g, " ")} card">
         `;
       });
       const uiOverlay = document.getElementById("risque-con-cardplay-ui");

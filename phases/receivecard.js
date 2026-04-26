@@ -242,7 +242,7 @@
       receiveCardSetMessage("");
       handStrip.innerHTML = "";
       if (newImg) {
-        newImg.src = "assets/images/cards/CARDBACK.webp";
+        newImg.src = "assets/images/Cards/CARDBACK.webp";
         newImg.alt = "";
         newImg.classList.remove("receivecard-new-glow");
       }
@@ -295,18 +295,18 @@
       if (drawnThisStep && cardName === drawnThisStep.name) {
         img.classList.add("receivecard-thumb-new");
       }
-      img.src = "assets/images/cards/" + cardName + ".webp";
+      img.src = "assets/images/Cards/" + cardName + ".webp";
       img.alt = cardName.replace(/_/g, " ");
       handStrip.appendChild(img);
     });
 
     if (newImg) {
       if (drawnThisStep) {
-        newImg.src = "assets/images/cards/" + drawnThisStep.name + ".webp";
+        newImg.src = "assets/images/Cards/" + drawnThisStep.name + ".webp";
         newImg.alt = drawnThisStep.name.replace(/_/g, " ");
         newImg.classList.add("receivecard-new-glow");
       } else {
-        newImg.src = "assets/images/cards/CARDBACK.webp";
+        newImg.src = "assets/images/Cards/CARDBACK.webp";
         newImg.alt = conquestElimReview
           ? "Deck card after reinforcement"
           : eligible
@@ -687,7 +687,7 @@
         '<div class="text title" style="left:1152px;top:328px;width:704px;height:80px;">Receive Card</div>' +
         '<div id="receivecard-compact-message" class="text" style="left:1152px;top:380px;width:704px;font-size:28px;"></div>' +
         '<div id="receivecard-hand-strip" style="position:absolute;left:1100px;top:480px;display:flex;gap:6px;flex-wrap:wrap;max-width:800px;"></div>' +
-        '<img id="receivecard-new-img" class="card-image" style="left:1250px;top:620px;width:150px;height:240px;" src="assets/images/cards/CARDBACK.webp" alt="" />' +
+        '<img id="receivecard-new-img" class="card-image" style="left:1250px;top:620px;width:150px;height:240px;" src="assets/images/Cards/CARDBACK.webp" alt="" />' +
         '<button type="button" id="receivecard-btn-end" class="button" style="left:1250px;top:900px;width:280px;height:36px;">Continue</button>';
     }
 

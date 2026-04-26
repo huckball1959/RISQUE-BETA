@@ -135,7 +135,7 @@
       forceCardSetMessage("");
       handStrip.innerHTML = "";
       if (newImg) {
-        newImg.src = "assets/images/cards/CARDBACK.webp";
+        newImg.src = "assets/images/Cards/CARDBACK.webp";
         newImg.alt = "";
         newImg.classList.remove("receivecard-new-glow");
       }
@@ -176,18 +176,18 @@
       if (drawnThisStep && cardName === drawnThisStep.name) {
         img.classList.add("receivecard-thumb-new");
       }
-      img.src = "assets/images/cards/" + cardName + ".webp";
+      img.src = "assets/images/Cards/" + cardName + ".webp";
       img.alt = cardName.replace(/_/g, " ");
       handStrip.appendChild(img);
     });
 
     if (newImg) {
       if (drawnThisStep) {
-        newImg.src = "assets/images/cards/" + drawnThisStep.name + ".webp";
+        newImg.src = "assets/images/Cards/" + drawnThisStep.name + ".webp";
         newImg.alt = drawnThisStep.name.replace(/_/g, " ");
         newImg.classList.add("receivecard-new-glow");
       } else {
-        newImg.src = "assets/images/cards/CARDBACK.webp";
+        newImg.src = "assets/images/Cards/CARDBACK.webp";
         newImg.alt = "No new card";
         newImg.classList.remove("receivecard-new-glow");
       }
@@ -416,7 +416,7 @@
           '<div id="forcecard-compact-message" class="receivecard-compact-message" aria-live="polite"></div>' +
           '<div class="receivecard-compact-visual">' +
           '<div id="forcecard-hand-strip" class="receivecard-hand-strip"></div>' +
-          '<img id="forcecard-new-img" class="receivecard-new-img" src="assets/images/cards/CARDBACK.webp" alt="" />' +
+          '<img id="forcecard-new-img" class="receivecard-new-img" src="assets/images/Cards/CARDBACK.webp" alt="" />' +
           "</div>" +
           '<div class="receivecard-compact-actions receivecard-compact-actions--bottom">' +
           '<button type="button" id="forcecard-btn-end" class="receivecard-btn-compact">CONTINUE</button>' +
@@ -431,7 +431,7 @@
         '<div class="text title" style="left:1152px;top:328px;width:704px;height:80px;">Force card</div>' +
         '<div id="forcecard-compact-message" class="text" style="left:1152px;top:380px;width:704px;font-size:28px;"></div>' +
         '<div id="forcecard-hand-strip" style="position:absolute;left:1100px;top:480px;display:flex;gap:6px;flex-wrap:wrap;max-width:800px;"></div>' +
-        '<img id="forcecard-new-img" class="card-image" style="left:1250px;top:620px;width:150px;height:240px;" src="assets/images/cards/CARDBACK.webp" alt="" />' +
+        '<img id="forcecard-new-img" class="card-image" style="left:1250px;top:620px;width:150px;height:240px;" src="assets/images/Cards/CARDBACK.webp" alt="" />' +
         '<button type="button" id="forcecard-btn-end" class="button" style="left:1250px;top:900px;width:280px;height:36px;">Continue</button>';
     }
 
