@@ -176,14 +176,14 @@
       if (drawnThisStep && cardName === drawnThisStep.name) {
         img.classList.add("receivecard-thumb-new");
       }
-      img.src = "assets/images/Cards/" + cardName + ".webp";
+      img.src = "assets/images/Cards/" + String(cardName || "").toUpperCase() + ".webp";
       img.alt = cardName.replace(/_/g, " ");
       handStrip.appendChild(img);
     });
 
     if (newImg) {
       if (drawnThisStep) {
-        newImg.src = "assets/images/Cards/" + drawnThisStep.name + ".webp";
+        newImg.src = "assets/images/Cards/" + String(drawnThisStep.name || "").toUpperCase() + ".webp";
         newImg.alt = drawnThisStep.name.replace(/_/g, " ");
         newImg.classList.add("receivecard-new-glow");
       } else {

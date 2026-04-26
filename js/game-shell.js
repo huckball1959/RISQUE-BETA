@@ -1181,7 +1181,7 @@
         var alt = cn.replace(/_/g, " ");
         html +=
           '<img class="risque-host-cards-played-thumb" src="assets/images/Cards/' +
-          cn +
+          String(cn || "").toUpperCase() +
           '.webp" alt="' +
           alt +
           '" loading="lazy" />';
@@ -1237,7 +1237,7 @@
         var alt = cn2.replace(/_/g, " ");
         html +=
           '<img class="risque-host-cards-played-thumb" src="assets/images/Cards/' +
-          cn2 +
+          String(cn2 || "").toUpperCase() +
           '.webp" alt="' +
           escapeHtmlLucky(alt) +
           '" loading="lazy" />';
@@ -2286,7 +2286,7 @@
     for (ii = 0; ii < ids.length; ii += 1) {
       var img = document.createElement("img");
       img.className = "risque-public-book-voice-card-img risque-public-book-voice-card-img--intro";
-      img.src = "assets/images/Cards/" + ids[ii] + ".webp";
+      img.src = "assets/images/Cards/" + String(ids[ii] || "").toUpperCase() + ".webp";
       img.alt = "";
       img.setAttribute("loading", "lazy");
       row.appendChild(img);
@@ -3335,7 +3335,7 @@
           cardRow.className = "risque-public-book-voice-recap-card-row";
           var img1 = document.createElement("img");
           img1.className = "risque-public-book-voice-card-img risque-public-book-voice-card-img--active";
-          img1.src = "assets/images/Cards/" + oneKey + ".webp";
+          img1.src = "assets/images/Cards/" + String(oneKey || "").toUpperCase() + ".webp";
           img1.alt = "";
           img1.setAttribute("loading", "lazy");
           cardRow.appendChild(img1);
@@ -3384,7 +3384,7 @@
           } else {
             img.classList.add("risque-public-book-voice-card-img--pending");
           }
-          img.src = "assets/images/Cards/" + sid + ".webp";
+          img.src = "assets/images/Cards/" + String(sid || "").toUpperCase() + ".webp";
           img.alt = "";
           img.setAttribute("loading", "lazy");
           var stepBadge = null;
@@ -3771,7 +3771,7 @@
         "risque-public-cardplay-recap-card-img risque-public-cardplay-recap-card-img--stagger";
       img.style.animationDelay = recapPopIdx * 45 + "ms";
       recapPopIdx += 1;
-      img.src = "assets/images/Cards/" + sid + ".webp";
+      img.src = "assets/images/Cards/" + String(sid || "").toUpperCase() + ".webp";
       img.alt = "";
       img.setAttribute("loading", "lazy");
       if (label.acquireStrokeColor) {

@@ -958,7 +958,7 @@
             if (useHud) {
               cardHtmlCompact +=
                 '<img class="card cardplay-compact-card" src="assets/images/Cards/' +
-                card.name +
+                String(card.name || "").toUpperCase() +
                 '.webp" data-card="' +
                 card.name +
                 '" data-id="' +
@@ -968,7 +968,7 @@
                 ' card">';
             } else {
               cardHtml += `
-              <img class="card" src="assets/images/Cards/${card.name}.webp" style="left: ${pos.x}px; top: ${pos.y}px; width: ${pos.width}px; height: ${pos.height}px;" data-card="${card.name}" data-id="${card.id}" alt="${alt} card">
+              <img class="card" src="assets/images/Cards/${String(card.name || "").toUpperCase()}.webp" style="left: ${pos.x}px; top: ${pos.y}px; width: ${pos.width}px; height: ${pos.height}px;" data-card="${card.name}" data-id="${card.id}" alt="${alt} card">
             `;
             }
           }
@@ -1205,7 +1205,7 @@
           const alt = card.name.replace(/_/g, ' ');
           html +=
             '<img class="card cardplay-compact-card" src="assets/images/Cards/' +
-            card.name +
+            String(card.name || "").toUpperCase() +
             '.webp" data-card="' +
             card.name +
             '" data-id="' +
