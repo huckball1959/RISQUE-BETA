@@ -5128,12 +5128,8 @@
 
   /** Show folder prompt once per page load; host only; skipped if already chosen/open. */
   function showRoundAutosaveIntroModalOnce() {
-    if (window.__risqueRoundAutosaveIntroShown) return;
-    window.__risqueRoundAutosaveIntroShown = true;
-    if (hasSeenRoundAutosavePromptThisTab()) return;
-    if (__risqueRoundAutosaveDirHandle) return;
-    if (document.getElementById("risque-round-autosave-setup")) return;
-    mountRoundAutosaveSetupOverlay({ intro: true });
+    /* Prompt flow disabled: autosave runs silently to downloads. */
+    return;
   }
 
   function writeRoundAutosaveToDisk(gs) {
@@ -5978,10 +5974,8 @@
   }
 
   function hasRoundAutosaveDiskTarget() {
-    return !!(
-      __risqueRoundAutosaveDirHandle &&
-      typeof __risqueRoundAutosaveDirHandle.getFileHandle === "function"
-    );
+    /* For now, always use browser-download autosaves in all environments. */
+    return false;
   }
 
   function setRoundAutosaveStatus(round, atMs, mode) {
