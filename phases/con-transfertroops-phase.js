@@ -402,6 +402,7 @@
         delete gs.risqueRuntimeCardplayIncomeMode;
         delete gs.risqueConquestAttackEntryTurnKey;
         delete gs.risqueConquestAttackEntryContinents;
+        delete gs.risqueContinentsPaidLastStandardMeta;
         try {
           persist(gs);
         } catch (eSave) {

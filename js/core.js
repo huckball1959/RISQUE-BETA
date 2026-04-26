@@ -325,6 +325,49 @@ window.gameUtils = {
     }
   },
   /**
+   * True if this continent was already paid at the last standard income this same round+player, or was
+   * fully held before attack phase (attack-entry baseline). Used so con-income does not pay again
+   * when conquer routing flags were cleared before con-income mount.
+   */
+  shouldSkipConIncomeBaselineContinent: function (gameState, continentKey) {
+    try {
+      if (!gameState || !continentKey) return false;
+      var k = String(continentKey);
+      var meta = gameState.risqueContinentsPaidLastStandardMeta;
+      if (
+        meta &&
+        Array.isArray(meta.keys) &&
+        meta.keys.indexOf(k) !== -1 &&
+        Number(meta.round) === Number(gameState.round) &&
+        String(meta.player || "").toUpperCase() === String(gameState.currentPlayer || "").toUpperCase()
+      ) {
+        return true;
+      }
+      var attack = gameState.risqueConquestAttackEntryContinents || [];
+      if (attack.length > 0 && attack.indexOf(k) !== -1) {
+        return true;
+      }
+    } catch (eSk) {
+      /* ignore */
+    }
+    return false;
+  },
+  /**
+   * Strip pending continents that standard income or attack-entry baseline already covered.
+   */
+  filterConIncomePendingContinentsArray: function (gameState) {
+    try {
+      if (!gameState) return [];
+      var pending = Array.isArray(gameState.pendingNewContinents) ? gameState.pendingNewContinents.slice() : [];
+      var self = this;
+      return pending.filter(function (key) {
+        return !self.shouldSkipConIncomeBaselineContinent(gameState, key);
+      });
+    } catch (eF) {
+      return [];
+    }
+  },
+  /**
    * Call when advancing currentPlayer to the next seat (receivecard end-turn, reinforce, devtools, etc.).
    * Elimination / conquest chains set conquer-mode routing flags; if they survive into the next player's
    * turn, post-cardplay routes to con-income (books + “new” continents only) instead of standard income.
@@ -338,6 +381,7 @@ window.gameUtils = {
       delete gameState.risqueSkipContinentSnapshotRefresh;
       delete gameState.risqueConquestAttackEntryTurnKey;
       delete gameState.risqueConquestAttackEntryContinents;
+      delete gameState.risqueContinentsPaidLastStandardMeta;
     } catch (e) {
       /* ignore */
     }

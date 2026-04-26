@@ -179,6 +179,9 @@
         }
         /* computePendingNewContinentsForConquest already filters attack-entry baseline; re-apply if state was only adjusted above. */
         gameState.pendingNewContinents = window.gameUtils.computePendingNewContinentsForConquest(gameState);
+        if (typeof window.gameUtils.filterConIncomePendingContinentsArray === "function") {
+          gameState.pendingNewContinents = window.gameUtils.filterConIncomePendingContinentsArray(gameState);
+        }
       }
       if (!Object.keys(gameState.continentsSnapshot || {}).length) {
         logToStorage("WARNING: continentsSnapshot empty — deploy/attack should set baseline before dice", {
@@ -198,9 +201,6 @@
       });
       var pendingNew = gameState.pendingNewContinents || [];
       var attackEntryContinents = gameState.risqueConquestAttackEntryContinents || [];
-      var skipAttackBaselineContinents =
-        attackEntryContinents.length > 0 &&
-        (gameState.risqueRuntimeCardplayIncomeMode === "conquer" || !!gameState.risqueConquestChainActive);
       logToStorage("Income continent trace", {
         snapshotOwned: snapshotOwned,
         turnStartKeys: Object.keys(gameState.risqueTurnStartContinentsSnapshot || {}),
@@ -209,14 +209,22 @@
         collectionCounts: gameState.continentCollectionCounts,
         baselineLocked: !!gameState.risqueConquestIncomeBaselineLocked,
         attackEntryContinents: attackEntryContinents,
-        skipAttackBaselineContinents: skipAttackBaselineContinents
+        standardIncomeContinentsMeta: gameState.risqueContinentsPaidLastStandardMeta || null,
+        chainActive: !!gameState.risqueConquestChainActive,
+        runtimeIncomeMode: gameState.risqueRuntimeCardplayIncomeMode || ""
       });
       var continentDetails = "";
       var continentRowsForMirror = [];
       var cdn = window.gameUtils && window.gameUtils.continentDisplayNames;
       pendingNew.forEach(function (key) {
-        if (skipAttackBaselineContinents && attackEntryContinents.indexOf(key) !== -1) {
-          logToStorage("Con-income skip pending continent (held before attack this turn)", { key: key });
+        if (
+          window.gameUtils &&
+          typeof window.gameUtils.shouldSkipConIncomeBaselineContinent === "function" &&
+          window.gameUtils.shouldSkipConIncomeBaselineContinent(gameState, key)
+        ) {
+          logToStorage("Con-income skip pending continent (baseline / standard income already paid)", {
+            key: key
+          });
           return;
         }
         var collectionCount = gameState.continentCollectionCounts[key] || 0;
@@ -245,7 +253,7 @@
         window.gameUtils &&
         typeof window.gameUtils.getPlayerContinents === "function" &&
         typeof window.gameUtils.getNextContinentValue === "function";
-      var skipHeldContinentFromPreAttackBaseline = skipAttackBaselineContinents;
+      var skipHeldContinentFromPreAttackBaseline = true;
 
       if (useStandardHeldSupplement) {
         territoryBonusRow = Math.max(Math.floor(territoryCount / 3), 3);
@@ -266,7 +274,12 @@
             }
           }
           if (cKey == null) continue;
-          if (skipHeldContinentFromPreAttackBaseline && attackEntryContinents.indexOf(cKey) !== -1) {
+          if (
+            skipHeldContinentFromPreAttackBaseline &&
+            window.gameUtils &&
+            typeof window.gameUtils.shouldSkipConIncomeBaselineContinent === "function" &&
+            window.gameUtils.shouldSkipConIncomeBaselineContinent(gameState, cKey)
+          ) {
             continue;
           }
           var cVal = window.gameUtils.getNextContinentValue(cKey, gameState.continentCollectionCounts[cKey] || 0);
@@ -403,6 +416,11 @@
         gameState.risqueConquestChainPaidContinents = paidAcc;
         logToStorage("Incremented continent counts (new continents only)", { updatedCounts: gameState.continentCollectionCounts });
         gameState.pendingNewContinents = [];
+        try {
+          delete gameState.risqueContinentsPaidLastStandardMeta;
+        } catch (eStdMeta) {
+          /* ignore */
+        }
         /* One Risk deck draw if still owed: card-acquire (cardplayConquered) or combat elimination
          * (risqueCombatDeckPending — not cleared by con-cardplay book/elim branches). Skip if receive-card
          * already awarded a deck draw this turn. */
