@@ -762,10 +762,6 @@
         delete gameState.risqueConquestAttackEntryContinents;
         clearedConquestIncome = true;
       }
-      if (gameState.risqueContinentsPaidLastStandardMeta) {
-        delete gameState.risqueContinentsPaidLastStandardMeta;
-        clearedConquestIncome = true;
-      }
       if (clearedConquestIncome) {
         try {
           localStorage.setItem("gameState", JSON.stringify(gameState));

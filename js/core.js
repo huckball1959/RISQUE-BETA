@@ -255,27 +255,20 @@ window.gameUtils = {
     return out;
   },
   /**
-   * Once per current player per round at first attack-phase mount: continents they already held entirely
-   * before rolling dice this turn. Con-income uses this so mid-campaign con-income does not re-pay
-   * continents already collected at pre-campaign income (cardplay snapshot can lag cardplay captures).
+   * Every host attack-phase mount: record which continents the current player fully controls at attack
+   * start, and drop pre-attack continent-income bookkeeping. Con-income and pending recompute treat only
+   * continents gained after this snapshot as campaign "new" (cardplay/income/snapshot state is ignored).
    */
   captureRisqueConquestAttackEntryContinentsIfNeeded: function (gameState) {
     try {
       if (!gameState || (typeof window !== "undefined" && window.risqueDisplayIsPublic)) return;
+      delete gameState.risqueContinentsPaidLastStandardMeta;
       var cur = gameState.currentPlayer;
       var tk = (Number(gameState.round) || 1) + "|" + String(cur || "");
-      /* Autosave / partial state can store matching turnKey with [] — must recompute or filters never apply. */
-      if (
-        gameState.risqueConquestAttackEntryTurnKey === tk &&
-        Array.isArray(gameState.risqueConquestAttackEntryContinents) &&
-        gameState.risqueConquestAttackEntryContinents.length > 0
-      ) {
-        return;
-      }
       var cp =
         gameState.players &&
         gameState.players.find(function (p) {
-          return p && p.name === cur;
+          return p && String(p.name || "").toUpperCase() === String(cur || "").toUpperCase();
         });
       if (!cp || !Array.isArray(cp.territories)) return;
       gameState.risqueConquestAttackEntryTurnKey = tk;
@@ -303,10 +296,12 @@ window.gameUtils = {
         return gameState.pendingNewContinents.slice().filter(notPaidInChain).filter(notHeldBeforeAttackPhase);
       }
       const cur = gameState.currentPlayer;
-      const cp = gameState.players && gameState.players.find(p => p && p.name === cur);
+      const cp =
+        gameState.players &&
+        gameState.players.find(function (p) {
+          return p && String(p.name || "").toUpperCase() === String(cur || "").toUpperCase();
+        });
       if (!cp || !Array.isArray(cp.territories)) return [];
-      const snapshot = gameState.continentsSnapshot || {};
-      const snapKeys = Object.keys(snapshot);
       const self = this;
       const owned = [];
       Object.keys(this.continents || {}).forEach(contKey => {
@@ -317,32 +312,28 @@ window.gameUtils = {
         );
         if (hasAll) owned.push(contKey);
       });
-      return owned.filter(
-        k => snapKeys.indexOf(k) === -1 && notPaidInChain(k) && notHeldBeforeAttackPhase(k)
-      );
+      if (attackEntry.length > 0) {
+        return owned.filter(function (k) {
+          return notPaidInChain(k) && notHeldBeforeAttackPhase(k);
+        });
+      }
+      const snapshot = gameState.continentsSnapshot || {};
+      const snapKeys = Object.keys(snapshot);
+      return owned.filter(function (k) {
+        return snapKeys.indexOf(k) === -1 && notPaidInChain(k) && notHeldBeforeAttackPhase(k);
+      });
     } catch (e) {
       return [];
     }
   },
   /**
-   * True if this continent was already paid at the last standard income this same round+player, or was
-   * fully held before attack phase (attack-entry baseline). Used so con-income does not pay again
-   * when conquer routing flags were cleared before con-income mount.
+   * True if the current player already held this continent entirely at attack-phase mount (authoritative
+   * baseline for con-income; ignores cardplay snapshot and pre-attack income).
    */
   shouldSkipConIncomeBaselineContinent: function (gameState, continentKey) {
     try {
       if (!gameState || !continentKey) return false;
       var k = String(continentKey);
-      var meta = gameState.risqueContinentsPaidLastStandardMeta;
-      if (
-        meta &&
-        Array.isArray(meta.keys) &&
-        meta.keys.indexOf(k) !== -1 &&
-        Number(meta.round) === Number(gameState.round) &&
-        String(meta.player || "").toUpperCase() === String(gameState.currentPlayer || "").toUpperCase()
-      ) {
-        return true;
-      }
       var attack = gameState.risqueConquestAttackEntryContinents || [];
       if (attack.length > 0 && attack.indexOf(k) !== -1) {
         return true;
@@ -353,7 +344,7 @@ window.gameUtils = {
     return false;
   },
   /**
-   * Strip pending continents that standard income or attack-entry baseline already covered.
+   * Strip pending continents already held at attack start.
    */
   filterConIncomePendingContinentsArray: function (gameState) {
     try {

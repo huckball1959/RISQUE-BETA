@@ -4,8 +4,9 @@
  * continents newly completed since attack entry (continentsSnapshot) vs current board.
  * When pendingNew is empty after recompute, apply the same territory + held-continent reinforcement as
  * phases/income.js — otherwise a played book (+10) could be the only payout (old fallback only ran when
- * total was &lt; 1). Continents fully held before the first attack mount this turn
- * (risqueConquestAttackEntryContinents) are excluded so pre-campaign income is not duplicated mid-chain.
+ * total was &lt; 1). Continents the attacker fully held at **attack phase mount** (every
+ * `?phase=attack` host mount refreshes `risqueConquestAttackEntryContinents`) define campaign “new”;
+ * cardplay `continentsSnapshot` is only used if that list is still empty (e.g. legacy save).
  */
 (function () {
   "use strict";
@@ -209,7 +210,6 @@
         collectionCounts: gameState.continentCollectionCounts,
         baselineLocked: !!gameState.risqueConquestIncomeBaselineLocked,
         attackEntryContinents: attackEntryContinents,
-        standardIncomeContinentsMeta: gameState.risqueContinentsPaidLastStandardMeta || null,
         chainActive: !!gameState.risqueConquestChainActive,
         runtimeIncomeMode: gameState.risqueRuntimeCardplayIncomeMode || ""
       });
@@ -416,11 +416,6 @@
         gameState.risqueConquestChainPaidContinents = paidAcc;
         logToStorage("Incremented continent counts (new continents only)", { updatedCounts: gameState.continentCollectionCounts });
         gameState.pendingNewContinents = [];
-        try {
-          delete gameState.risqueContinentsPaidLastStandardMeta;
-        } catch (eStdMeta) {
-          /* ignore */
-        }
         /* One Risk deck draw if still owed: card-acquire (cardplayConquered) or combat elimination
          * (risqueCombatDeckPending — not cleared by con-cardplay book/elim branches). Skip if receive-card
          * already awarded a deck draw this turn. */
