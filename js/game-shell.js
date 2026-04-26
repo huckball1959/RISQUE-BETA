@@ -53,6 +53,55 @@
   var deployKindQuery = (query.get("kind") || "").trim().toLowerCase();
   /** Set after receive-card tablet handoff so cardplay mount does not show a second handoff. */
   var skipCardplayEntryHandoff = String(query.get("postReceive") || "") === "1";
+  var POST_RECEIVE_CARDPLAY_BLACKOUT_KEY = "risquePostReceiveCardplayBlackout";
+  var POST_RECEIVE_BLACKOUT_STYLE_ID = "risque-post-receive-blackout-style";
+
+  function injectPostReceiveBlackoutStylesOnce() {
+    if (document.getElementById(POST_RECEIVE_BLACKOUT_STYLE_ID)) return;
+    var s = document.createElement("style");
+    s.id = POST_RECEIVE_BLACKOUT_STYLE_ID;
+    s.textContent =
+      "#risque-post-receive-blackout{position:fixed;inset:0;z-index:9999999;margin:0;padding:0;" +
+      "background:#000000;pointer-events:none;}";
+    document.head.appendChild(s);
+  }
+
+  function showPostReceiveCardplayBlackout() {
+    injectPostReceiveBlackoutStylesOnce();
+    var el = document.getElementById("risque-post-receive-blackout");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "risque-post-receive-blackout";
+      el.setAttribute("aria-hidden", "true");
+      document.body.appendChild(el);
+    }
+    return function hidePostReceiveCardplayBlackout() {
+      var x = document.getElementById("risque-post-receive-blackout");
+      if (x && x.parentNode) {
+        x.parentNode.removeChild(x);
+      }
+    };
+  }
+
+  window.risqueMarkPostReceiveCardplayBlackout = function () {
+    try {
+      sessionStorage.setItem(POST_RECEIVE_CARDPLAY_BLACKOUT_KEY, "1");
+    } catch (eMark) {
+      /* ignore */
+    }
+  };
+
+  function maybeStartPostReceiveBlackoutFromSession() {
+    if (window.risqueDisplayIsPublic) return;
+    if (!skipCardplayEntryHandoff) return;
+    try {
+      if (sessionStorage.getItem(POST_RECEIVE_CARDPLAY_BLACKOUT_KEY) !== "1") return;
+      sessionStorage.removeItem(POST_RECEIVE_CARDPLAY_BLACKOUT_KEY);
+    } catch (eRead) {
+      return;
+    }
+    window.__risquePostReceiveBlackoutHide = showPostReceiveCardplayBlackout();
+  }
   /*
    * Public board must follow mirrored gameState.phase only. A stale ?phase=attack (or any host URL
    * copied into this tab) would mount the wrong UI (e.g. attack while state is deploy).
@@ -6626,6 +6675,7 @@
 
   publicMirrorLastPhase = window.risqueDisplayIsPublic ? state.phase : null;
   syncPhaseDataAttr(state);
+  maybeStartPostReceiveBlackoutFromSession();
   startRoundAutosaveWatcher();
   showRoundAutosaveIntroModalOnce();
 
@@ -6938,6 +6988,14 @@
         }
       });
       refreshVisuals("Card play mounted");
+      if (typeof window.__risquePostReceiveBlackoutHide === "function") {
+        try {
+          window.__risquePostReceiveBlackoutHide();
+        } catch (eBlk) {
+          /* ignore */
+        }
+        window.__risquePostReceiveBlackoutHide = null;
+      }
     }
 
     if (skipCardplayEntryHandoff && !window.risqueDisplayIsPublic) {

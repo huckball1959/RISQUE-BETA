@@ -94,12 +94,12 @@
         }
       }
       if (navigateTo) {
-        overlay.remove();
         if (window.risqueNavigateWithFade) {
           window.risqueNavigateWithFade(navigateTo);
         } else {
           window.location.href = navigateTo;
         }
+        overlay.remove();
       } else {
         overlay.remove();
       }

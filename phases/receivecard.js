@@ -496,6 +496,9 @@
       "Next player\n\nHand the tablet to " + nextPlayerName + " for card play.\n\nOnly this player should tap Continue.";
     function goNextPlayerCardplay() {
       var target = "game.html?phase=cardplay&legacyNext=income.html&postReceive=1";
+      if (typeof window.risqueMarkPostReceiveCardplayBlackout === "function") {
+        window.risqueMarkPostReceiveCardplayBlackout();
+      }
       if (window.risqueNavigateWithFade) {
         window.risqueNavigateWithFade(target);
       } else {
