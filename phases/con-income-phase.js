@@ -167,6 +167,15 @@
         }, 2000);
         return;
       }
+      if (typeof window.gameUtils.getRisqueConquestAttackStartBaselineList === "function") {
+        var baselineRestore = window.gameUtils.getRisqueConquestAttackStartBaselineList(gameState);
+        if (baselineRestore.length) {
+          var btk =
+            (Number(gameState.round) || 1) + "|" + String(gameState.currentPlayer || "");
+          gameState.risqueConquestAttackEntryTurnKey = btk;
+          gameState.risqueConquestAttackEntryContinents = baselineRestore.slice();
+        }
+      }
       /* Recompute when baselines exist; if that yields nothing but conquer already set pending (e.g. snapshot missing in save), keep conquer's list. */
       if (typeof window.gameUtils.computePendingNewContinentsForConquest === "function") {
         var recomputed = window.gameUtils.computePendingNewContinentsForConquest(gameState);
@@ -201,7 +210,10 @@
         return snapshot[key];
       });
       var pendingNew = gameState.pendingNewContinents || [];
-      var attackEntryContinents = gameState.risqueConquestAttackEntryContinents || [];
+      var attackEntryContinents =
+        typeof window.gameUtils.getRisqueConquestAttackStartBaselineList === "function"
+          ? window.gameUtils.getRisqueConquestAttackStartBaselineList(gameState)
+          : gameState.risqueConquestAttackEntryContinents || [];
       logToStorage("Income continent trace", {
         snapshotOwned: snapshotOwned,
         turnStartKeys: Object.keys(gameState.risqueTurnStartContinentsSnapshot || {}),

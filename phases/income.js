@@ -501,6 +501,9 @@
             try {
               delete gameState.risqueConquestAttackEntryTurnKey;
               delete gameState.risqueConquestAttackEntryContinents;
+              if (window.gameUtils && typeof window.gameUtils.clearRisqueConquestAttackStartSession === "function") {
+                window.gameUtils.clearRisqueConquestAttackStartSession();
+              }
             } catch (eAtkClr) {
               /* ignore */
             }

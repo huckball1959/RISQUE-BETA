@@ -760,6 +760,9 @@
       if (gameState.risqueConquestAttackEntryTurnKey != null || gameState.risqueConquestAttackEntryContinents) {
         delete gameState.risqueConquestAttackEntryTurnKey;
         delete gameState.risqueConquestAttackEntryContinents;
+        if (window.gameUtils && typeof window.gameUtils.clearRisqueConquestAttackStartSession === "function") {
+          window.gameUtils.clearRisqueConquestAttackStartSession();
+        }
         clearedConquestIncome = true;
       }
       if (clearedConquestIncome) {

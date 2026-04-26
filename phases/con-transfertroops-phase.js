@@ -402,6 +402,9 @@
         delete gs.risqueRuntimeCardplayIncomeMode;
         delete gs.risqueConquestAttackEntryTurnKey;
         delete gs.risqueConquestAttackEntryContinents;
+        if (window.gameUtils && typeof window.gameUtils.clearRisqueConquestAttackStartSession === "function") {
+          window.gameUtils.clearRisqueConquestAttackStartSession();
+        }
         try {
           persist(gs);
         } catch (eSave) {

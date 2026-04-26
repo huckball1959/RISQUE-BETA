@@ -254,6 +254,55 @@ window.gameUtils = {
     }
     return out;
   },
+  RISQUE_ATTACK_START_BASELINE_SESSION_KEY: "risqueConquestAttackStartBaseline",
+  writeRisqueConquestAttackStartSession: function (turnKey, continentsArray) {
+    try {
+      if (typeof sessionStorage === "undefined") return;
+      if (typeof window !== "undefined" && window.risqueDisplayIsPublic) return;
+      if (!turnKey || !Array.isArray(continentsArray)) return;
+      sessionStorage.setItem(
+        this.RISQUE_ATTACK_START_BASELINE_SESSION_KEY,
+        JSON.stringify({ turnKey: turnKey, continents: continentsArray })
+      );
+    } catch (eW) {
+      /* ignore */
+    }
+  },
+  clearRisqueConquestAttackStartSession: function () {
+    try {
+      if (typeof sessionStorage === "undefined") return;
+      sessionStorage.removeItem(this.RISQUE_ATTACK_START_BASELINE_SESSION_KEY);
+    } catch (eC) {
+      /* ignore */
+    }
+  },
+  /**
+   * Baseline continents the attacker fully held at attack mount. Prefer gameState; if missing (e.g. TV
+   * tab overwrote shared localStorage), restore from this tab's sessionStorage (host-only write).
+   */
+  getRisqueConquestAttackStartBaselineList: function (gameState) {
+    try {
+      if (!gameState) return [];
+      var tk =
+        (Number(gameState.round) || 1) +
+        "|" +
+        String(gameState.currentPlayer || "");
+      var fromState = gameState.risqueConquestAttackEntryContinents;
+      if (Array.isArray(fromState) && fromState.length > 0) {
+        if (String(gameState.risqueConquestAttackEntryTurnKey || "") === tk) {
+          return fromState.slice();
+        }
+      }
+      if (typeof sessionStorage === "undefined") return [];
+      var raw = sessionStorage.getItem(this.RISQUE_ATTACK_START_BASELINE_SESSION_KEY);
+      if (!raw) return [];
+      var o = JSON.parse(raw);
+      if (!o || String(o.turnKey || "") !== tk) return [];
+      return Array.isArray(o.continents) ? o.continents.slice() : [];
+    } catch (eR) {
+      return [];
+    }
+  },
   /**
    * Every host attack-phase mount: record which continents the current player fully controls at attack
    * start, and drop pre-attack continent-income bookkeeping. Con-income and pending recompute treat only
@@ -273,6 +322,7 @@ window.gameUtils = {
       if (!cp || !Array.isArray(cp.territories)) return;
       gameState.risqueConquestAttackEntryTurnKey = tk;
       gameState.risqueConquestAttackEntryContinents = this.listFullyHeldContinentKeysForPlayer(gameState, cp);
+      this.writeRisqueConquestAttackStartSession(tk, gameState.risqueConquestAttackEntryContinents);
     } catch (eCap) {
       /* ignore */
     }
@@ -287,7 +337,7 @@ window.gameUtils = {
       const notPaidInChain = function (k) {
         return paidChain.indexOf(k) === -1;
       };
-      const attackEntry = gameState.risqueConquestAttackEntryContinents || [];
+      const attackEntry = this.getRisqueConquestAttackStartBaselineList(gameState);
       const notHeldBeforeAttackPhase = function (k) {
         if (!attackEntry.length) return true;
         return attackEntry.indexOf(k) === -1;
@@ -334,7 +384,7 @@ window.gameUtils = {
     try {
       if (!gameState || !continentKey) return false;
       var k = String(continentKey);
-      var attack = gameState.risqueConquestAttackEntryContinents || [];
+      var attack = this.getRisqueConquestAttackStartBaselineList(gameState);
       if (attack.length > 0 && attack.indexOf(k) !== -1) {
         return true;
       }
@@ -373,6 +423,7 @@ window.gameUtils = {
       delete gameState.risqueConquestAttackEntryTurnKey;
       delete gameState.risqueConquestAttackEntryContinents;
       delete gameState.risqueContinentsPaidLastStandardMeta;
+      this.clearRisqueConquestAttackStartSession();
     } catch (e) {
       /* ignore */
     }
