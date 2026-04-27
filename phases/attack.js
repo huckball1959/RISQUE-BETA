@@ -827,7 +827,7 @@ function tryImmediateGameWinAfterElimination(player, opponent, postCampaignAutoT
     conquestCelebrationCtaTimer = null;
   }
   if (!postCampaignAutoTransferDone) {
-    autoCompleteTroopTransferLeaveBehind(1);
+    autoCompleteTroopTransferLeaveBehind(1, {});
   }
   isAcquiring = false;
   risqueDeferredEliminationConquerPrompt = null;
@@ -1576,25 +1576,39 @@ function revealDiceFromSnap(snap) {
   }
 }
 
-/** Auto-finish transfer after capture (no slider UI). Same move math as initTroopTransfer / ALL BUT N. */
-function autoCompleteTroopTransferLeaveBehind(leaveBehind) {
+/**
+ * Auto-finish transfer after capture (no slider UI). Same move math as initTroopTransfer / ALL BUT N.
+ * @returns {{ ok: boolean, campaignHalted?: boolean }} campaignHalted: non-final campaign hop could not
+ *   honor "leave N behind" (N>1) because only one troop remained on the source after the capture — caller
+ *   should stop the campaign so multiple territories are not left with 1 by mistake.
+ */
+function autoCompleteTroopTransferLeaveBehind(leaveBehind, opts) {
+  opts = opts && typeof opts === 'object' ? opts : {};
+  const out = { ok: false, campaignHalted: false };
   const player = window.gameState.players.find(p => p.name === window.gameState.currentPlayer);
-  if (!player || !window.gameState.attackingTerritory || !window.gameState.acquiredTerritory) return false;
+  if (!player || !window.gameState.attackingTerritory || !window.gameState.acquiredTerritory) return out;
   const attacking = player.territories.find(t => t.name === window.gameState.attackingTerritory.name);
   const acquired = player.territories.find(t => t.name === window.gameState.acquiredTerritory.name);
-  if (!attacking || !acquired) return false;
+  if (!attacking || !acquired) return out;
   const minT = window.gameState.minTroopsToTransfer;
   let desired = Number(leaveBehind);
   if (!Number.isFinite(desired)) desired = 1;
   desired = Math.max(1, Math.floor(desired));
-  const at = attacking.troops;
-  const maxAdd = Math.max(0, at - 1);
-  const effLeave = Math.min(desired, at);
-  const additional = Math.min(maxAdd, Math.max(0, at - effLeave));
-  const attackerInit = at + minT;
+  const sourceTroopsSnapshot = attacking.troops;
+  const maxAdd = Math.max(0, sourceTroopsSnapshot - 1);
+  const effLeave = Math.min(desired, sourceTroopsSnapshot);
+  const additional = Math.min(maxAdd, Math.max(0, sourceTroopsSnapshot - effLeave));
+  const attackerInit = sourceTroopsSnapshot + minT;
   attacking.troops = attackerInit - minT - additional;
   acquired.troops = minT + additional;
   const totalToDest = minT + additional;
+
+  const isLastCampaignHop = opts.isLastCampaignHop === true;
+  const campaignAuto = !!opts.campaignAutoTransfer;
+  if (campaignAuto && !isLastCampaignHop && desired > 1 && sourceTroopsSnapshot === 1) {
+    out.campaignHalted = true;
+  }
+
   risqueStartPostTransferDestinationPulse(acquired.name, minT, totalToDest);
   prependCombatLog(
     `${player.name} moves ${totalToDest} troops into ${prettyTerritoryName(acquired.name)} (leave ${attacking.troops} on ${prettyTerritoryName(attacking.name)}).`,
@@ -1614,7 +1628,8 @@ function autoCompleteTroopTransferLeaveBehind(leaveBehind) {
   window.gameState.attackingTerritory = null;
   window.gameState.acquiredTerritory = null;
   window.gameState.minTroopsToTransfer = 0;
-  return true;
+  out.ok = true;
+  return out;
 }
 
 /** Brief pause so the board/mirror can update before inline conquer.js celebration (flash + CTA). */
@@ -1824,8 +1839,16 @@ function applyBattleRoundAfterRoll(snap, opts) {
     }
 
     if (opts.campaignAutoTransfer) {
-      autoCompleteTroopTransferLeaveBehind(
-        opts.campaignLeaveBehind != null ? opts.campaignLeaveBehind : campaignPreferredGarrison
+      const pathLen = opts.campaignPathLength;
+      const hopIdx = opts.campaignHopIndex;
+      const isLastCampaignHop =
+        typeof pathLen === 'number' &&
+        typeof hopIdx === 'number' &&
+        pathLen >= 2 &&
+        hopIdx === pathLen - 2;
+      const transferRes = autoCompleteTroopTransferLeaveBehind(
+        opts.campaignLeaveBehind != null ? opts.campaignLeaveBehind : campaignPreferredGarrison,
+        { campaignAutoTransfer: true, isLastCampaignHop }
       );
       isAcquiring = false;
       saveGameState();
@@ -1838,13 +1861,13 @@ function applyBattleRoundAfterRoll(snap, opts) {
       if (eliminated) {
         if (window.gameState.turnOrder.length === 1) {
           scheduleImmediateGameWinAfterElimination(player, opponent, true);
-          return { conquered: true };
+          return { conquered: true, campaignHalted: false };
         }
         scheduleAttackEliminatedProceedToConquerPrompt(player, opponent);
       } else {
         checkWinCondition();
       }
-      return { conquered: true };
+      return { conquered: true, campaignHalted: !!(transferRes && transferRes.campaignHalted) };
     }
 
     window.gameState.attackPhase = 'pending_transfer';
@@ -3725,6 +3748,7 @@ async function runInstantCampaignExecution() {
     let rounds = 0;
     let conquered = false;
     let instantCondStopThisHop = false;
+    let instantHaltWeakGarrison = false;
     while (attacker.troops > 1 && defender.troops > 0) {
       if (condInstant && condT != null && attacker.troops <= condT) {
         stopped = `INSTANT COND: CONDITIONAL STOP — attacking stack ≤ ${condT}.`;
@@ -3740,6 +3764,8 @@ async function runInstantCampaignExecution() {
       const res = applyBattleRoundAfterRoll(snap, {
         campaignAutoTransfer: true,
         campaignLeaveBehind: leaveBehind,
+        campaignHopIndex: i,
+        campaignPathLength: cp.length,
         skipBattleVoice: true,
         skipLossFlash: true
       });
@@ -3748,6 +3774,14 @@ async function runInstantCampaignExecution() {
       }
       if (res.conquered) {
         conquered = true;
+        if (res.campaignHalted) {
+          instantHaltWeakGarrison = true;
+          stopped = `Campaign halted: only 1 troop remained on ${prettyTerritoryName(
+            from
+          )} after capturing ${prettyTerritoryName(to)} — cannot keep leaving ${leaveBehind} on each territory. Continue manually from here.`;
+          instantMirrorStopAt = from;
+          campaignTrace('instant:campaign_halt_weak_garrison', { from, to, leaveBehind });
+        }
         await risqueYieldInstantCampaignPaint();
         break;
       }
@@ -3755,6 +3789,14 @@ async function runInstantCampaignExecution() {
     }
 
     if (instantCondStopThisHop) {
+      break;
+    }
+
+    if (instantHaltWeakGarrison) {
+      outcomes.push(`Won ${prettyTerritoryName(from)} → ${prettyTerritoryName(to)} in ${rounds} combat round(s).`);
+      outcomes.push(
+        `Halted — cannot keep leaving ${leaveBehind} on each territory after this capture; continue manually.`
+      );
       break;
     }
 
@@ -4068,9 +4110,12 @@ function pauseCampaignRoundTick() {
     return;
   }
   revealDiceFromSnap(snap);
+  const cpPause = campaignCommittedPath;
   const res = applyBattleRoundAfterRoll(snap, {
     campaignAutoTransfer: true,
     campaignLeaveBehind: pauseCampaignLeaveBehind,
+    campaignHopIndex: pauseCampaignHopI,
+    campaignPathLength: cpPause && cpPause.length ? cpPause.length : undefined,
     skipBattleVoice: true,
     skipLossFlash: false
   });
@@ -4086,10 +4131,21 @@ function pauseCampaignRoundTick() {
       `Won ${prettyTerritoryName(attacker.label)} → ${prettyTerritoryName(defender.label)} in ${pauseCampaignRoundsThisHop} combat round(s).`
     );
     campaignTrace('pause:hop_ok', { from: attacker.label, to: defender.label, rounds: pauseCampaignRoundsThisHop });
+    const fromL = attacker.label;
+    const toL = defender.label;
     pauseCampaignHopI += 1;
     attacker = null;
     defender = null;
     updateBattlePanelReadout();
+    if (res.campaignHalted) {
+      pauseCampaignMirrorStopLabel = fromL;
+      pauseCampaignStopped = `Campaign halted: only 1 troop remained on ${prettyTerritoryName(
+        fromL
+      )} after capturing ${prettyTerritoryName(toL)} — cannot keep leaving ${pauseCampaignLeaveBehind} on each territory. Continue manually from here.`;
+      campaignTrace('pause:campaign_halt_weak_garrison', { from: fromL, to: toL, leaveBehind: pauseCampaignLeaveBehind });
+      pauseCampaignFinalize();
+      return;
+    }
     clearPauseCampaignBetweenHopsTimer();
     pauseCampaignBetweenHopsTimer = setTimeout(() => {
       pauseCampaignBetweenHopsTimer = null;
