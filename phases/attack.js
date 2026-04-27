@@ -3701,11 +3701,20 @@ async function runInstantCampaignExecution() {
       campaignTrace('instant:hop_abort', { from, to, reason: 'bad_from' });
       break;
     }
-    if (fromSnap.troops < 2) {
-      stopped = `Stopped before ${prettyTerritoryName(to)}: only ${fromSnap.troops} troop(s) on ${prettyTerritoryName(from)}.`;
+    const minTroopsForNextHop = Math.max(2, leaveBehind * 2);
+    if (fromSnap.troops < minTroopsForNextHop) {
+      stopped = `Stopped before ${prettyTerritoryName(to)}: only ${fromSnap.troops} troop(s) on ${prettyTerritoryName(
+        from
+      )}; need at least ${minTroopsForNextHop} to keep leaving ${leaveBehind}.`;
       instantMirrorStopAt = from;
       publishPublicCampaignEndLackOfTroops();
-      campaignTrace('instant:hop_abort', { from, to, reason: 'low_troops' });
+      campaignTrace('instant:hop_abort', {
+        from,
+        to,
+        reason: 'low_troops_for_leave_behind',
+        leaveBehind,
+        minTroopsForNextHop
+      });
       break;
     }
     if (!toSnap) {
@@ -3756,6 +3765,20 @@ async function runInstantCampaignExecution() {
         instantCondCampaignStopTerritory = from;
         campaignTrace('instant:cond_stop', { threshold: condT, hop: 'during_battle', stopTerritory: from });
         instantCondStopThisHop = true;
+        break;
+      }
+      const minTroopsToSafelyConquerAndLeave = Math.max(2, leaveBehind * 2);
+      if (attacker.troops < minTroopsToSafelyConquerAndLeave) {
+        stopped = `Campaign halted before next roll: ${prettyTerritoryName(from)} has ${attacker.troops} troop(s), need at least ${minTroopsToSafelyConquerAndLeave} to keep leaving ${leaveBehind}.`;
+        instantMirrorStopAt = from;
+        campaignTrace('instant:campaign_halt_prevent_low_garrison', {
+          from,
+          to,
+          leaveBehind,
+          attackerTroops: attacker.troops,
+          minTroopsToSafelyConquerAndLeave
+        });
+        instantHaltWeakGarrison = true;
         break;
       }
       const snap = simulateBattleRound();
@@ -3954,11 +3977,20 @@ function pauseCampaignBeginNextHopOrFinish() {
       pauseCampaignFinalize();
       return;
     }
-    if (fromSnap.troops < 2) {
+    const minTroopsForNextHop = Math.max(2, pauseCampaignLeaveBehind * 2);
+    if (fromSnap.troops < minTroopsForNextHop) {
       pauseCampaignMirrorStopLabel = from;
-      pauseCampaignStopped = `Stopped before ${prettyTerritoryName(to)}: only ${fromSnap.troops} troop(s) on ${prettyTerritoryName(from)}.`;
+      pauseCampaignStopped = `Stopped before ${prettyTerritoryName(to)}: only ${fromSnap.troops} troop(s) on ${prettyTerritoryName(
+        from
+      )}; need at least ${minTroopsForNextHop} to keep leaving ${pauseCampaignLeaveBehind}.`;
       publishPublicCampaignEndLackOfTroops();
-      campaignTrace('pause:hop_abort', { from, to, reason: 'low_troops' });
+      campaignTrace('pause:hop_abort', {
+        from,
+        to,
+        reason: 'low_troops_for_leave_behind',
+        leaveBehind: pauseCampaignLeaveBehind,
+        minTroopsForNextHop
+      });
       pauseCampaignFinalize();
       return;
     }
@@ -4094,6 +4126,25 @@ function pauseCampaignRoundTick() {
       campaignTrace('pause:hop_fail', { from: attacker.label, to: defender.label, rounds: pauseCampaignRoundsThisHop });
       pauseCampaignFinalize();
     }
+    return;
+  }
+
+  const minTroopsToSafelyConquerAndLeave = Math.max(2, pauseCampaignLeaveBehind * 2);
+  if (attacker.troops < minTroopsToSafelyConquerAndLeave) {
+    if (pauseCampaignInterval) {
+      clearInterval(pauseCampaignInterval);
+      pauseCampaignInterval = null;
+    }
+    pauseCampaignMirrorStopLabel = attacker.label;
+    pauseCampaignStopped = `Campaign halted before next roll: ${prettyTerritoryName(attacker.label)} has ${attacker.troops} troop(s), need at least ${minTroopsToSafelyConquerAndLeave} to keep leaving ${pauseCampaignLeaveBehind}.`;
+    campaignTrace('pause:campaign_halt_prevent_low_garrison', {
+      from: attacker.label,
+      to: defender.label,
+      leaveBehind: pauseCampaignLeaveBehind,
+      attackerTroops: attacker.troops,
+      minTroopsToSafelyConquerAndLeave
+    });
+    pauseCampaignFinalize();
     return;
   }
 
