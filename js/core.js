@@ -323,75 +323,107 @@ window.gameUtils = {
       gameState.risqueConquestAttackEntryTurnKey = tk;
       gameState.risqueConquestAttackEntryContinents = this.listFullyHeldContinentKeysForPlayer(gameState, cp);
       this.writeRisqueConquestAttackStartSession(tk, gameState.risqueConquestAttackEntryContinents);
+      try {
+        delete gameState.risqueConquestStandardIncomeContinentKeysMeta;
+      } catch (eStdDel) {
+        /* ignore */
+      }
     } catch (eCap) {
       /* ignore */
     }
   },
   /**
+   * Continents that must not pay again as "new" in con-income: fully held at attack mount, OR (if that
+   * baseline is missing) continents that just received a standard-income collection increment this turn.
+   */
+  isContinentExcludedFromConIncomeNew: function (gameState, continentKey) {
+    try {
+      if (!gameState || continentKey == null || continentKey === "") return false;
+      var k = String(continentKey);
+      var attack = this.getRisqueConquestAttackStartBaselineList(gameState);
+      if (attack.length > 0) {
+        return attack.indexOf(k) !== -1;
+      }
+      var m = gameState.risqueConquestStandardIncomeContinentKeysMeta;
+      if (
+        m &&
+        Array.isArray(m.keys) &&
+        m.keys.indexOf(k) !== -1 &&
+        Number(m.round) === Number(gameState.round) &&
+        String(m.player || "").toUpperCase() === String(gameState.currentPlayer || "").toUpperCase()
+      ) {
+        return true;
+      }
+    } catch (eEx) {
+      /* ignore */
+    }
+    return false;
+  },
+  /**
    * Prefer gameState.pendingNewContinents when set (e.g. elimination); else diff full control vs continentsSnapshot.
    */
-  computePendingNewContinentsForConquest: function(gameState) {
+  computePendingNewContinentsForConquest: function (gameState) {
     try {
       if (!gameState) return [];
-      const paidChain = gameState.risqueConquestChainPaidContinents || [];
-      const notPaidInChain = function (k) {
+      var self = this;
+      var paidChain = gameState.risqueConquestChainPaidContinents || [];
+      var notPaidInChain = function (k) {
         return paidChain.indexOf(k) === -1;
       };
-      const attackEntry = this.getRisqueConquestAttackStartBaselineList(gameState);
-      const notHeldBeforeAttackPhase = function (k) {
-        if (!attackEntry.length) return true;
-        return attackEntry.indexOf(k) === -1;
+      var exclude = function (k) {
+        return self.isContinentExcludedFromConIncomeNew(gameState, k);
       };
       if (Array.isArray(gameState.pendingNewContinents) && gameState.pendingNewContinents.length > 0) {
-        return gameState.pendingNewContinents.slice().filter(notPaidInChain).filter(notHeldBeforeAttackPhase);
+        return gameState.pendingNewContinents.slice().filter(notPaidInChain).filter(function (k) {
+          return !exclude(k);
+        });
       }
-      const cur = gameState.currentPlayer;
-      const cp =
+      var cur = gameState.currentPlayer;
+      var cp =
         gameState.players &&
         gameState.players.find(function (p) {
           return p && String(p.name || "").toUpperCase() === String(cur || "").toUpperCase();
         });
       if (!cp || !Array.isArray(cp.territories)) return [];
-      const self = this;
-      const owned = [];
-      Object.keys(this.continents || {}).forEach(contKey => {
-        const ids = self.getContinentTerritoryIdsForBoard(gameState, contKey);
+      var owned = [];
+      Object.keys(this.continents || {}).forEach(function (contKey) {
+        var ids = self.getContinentTerritoryIdsForBoard(gameState, contKey);
         if (!ids.length) return;
-        const hasAll = ids.every(tid =>
-          cp.territories.some(pt => self.territoryNameFromEntry(pt) === tid)
-        );
+        var hasAll = ids.every(function (tid) {
+          return cp.territories.some(function (pt) {
+            return self.territoryNameFromEntry(pt) === tid;
+          });
+        });
         if (hasAll) owned.push(contKey);
       });
-      if (attackEntry.length > 0) {
+      var attackEntry = this.getRisqueConquestAttackStartBaselineList(gameState);
+      var stdMeta = gameState.risqueConquestStandardIncomeContinentKeysMeta;
+      var stdActive =
+        stdMeta &&
+        Array.isArray(stdMeta.keys) &&
+        stdMeta.keys.length > 0 &&
+        Number(stdMeta.round) === Number(gameState.round) &&
+        String(stdMeta.player || "").toUpperCase() === String(gameState.currentPlayer || "").toUpperCase();
+      if (attackEntry.length > 0 || stdActive) {
         return owned.filter(function (k) {
-          return notPaidInChain(k) && notHeldBeforeAttackPhase(k);
+          return notPaidInChain(k) && !exclude(k);
         });
       }
-      const snapshot = gameState.continentsSnapshot || {};
-      const snapKeys = Object.keys(snapshot);
+      var snapshot = gameState.continentsSnapshot || {};
+      var snapKeys = Object.keys(snapshot);
       return owned.filter(function (k) {
-        return snapKeys.indexOf(k) === -1 && notPaidInChain(k) && notHeldBeforeAttackPhase(k);
+        return snapKeys.indexOf(k) === -1 && notPaidInChain(k) && !exclude(k);
       });
     } catch (e) {
       return [];
     }
   },
   /**
-   * True if the current player already held this continent entirely at attack-phase mount (authoritative
-   * baseline for con-income; ignores cardplay snapshot and pre-attack income).
+   * True if this continent must not receive con-income "new continent" payout (attack baseline or
+   * post–cardplay standard income fallback).
    */
   shouldSkipConIncomeBaselineContinent: function (gameState, continentKey) {
-    try {
-      if (!gameState || !continentKey) return false;
-      var k = String(continentKey);
-      var attack = this.getRisqueConquestAttackStartBaselineList(gameState);
-      if (attack.length > 0 && attack.indexOf(k) !== -1) {
-        return true;
-      }
-    } catch (eSk) {
-      /* ignore */
-    }
-    return false;
+    return this.isContinentExcludedFromConIncomeNew(gameState, continentKey);
   },
   /**
    * Strip pending continents already held at attack start.
@@ -423,6 +455,7 @@ window.gameUtils = {
       delete gameState.risqueConquestAttackEntryTurnKey;
       delete gameState.risqueConquestAttackEntryContinents;
       delete gameState.risqueContinentsPaidLastStandardMeta;
+      delete gameState.risqueConquestStandardIncomeContinentKeysMeta;
       this.clearRisqueConquestAttackStartSession();
     } catch (e) {
       /* ignore */

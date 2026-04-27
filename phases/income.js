@@ -481,6 +481,7 @@
               /* ignore */
             }
             currentPlayer.bankValue = total;
+            var standardIncomeContinentKeys = [];
             for (var continent in window.gameUtils.continents) {
               if (
                 Object.prototype.hasOwnProperty.call(window.gameUtils.continents, continent)
@@ -495,8 +496,18 @@
                 ) {
                   gameState.continentCollectionCounts[continent] =
                     (gameState.continentCollectionCounts[continent] || 0) + 1;
+                  standardIncomeContinentKeys.push(continent);
                 }
               }
+            }
+            try {
+              gameState.risqueConquestStandardIncomeContinentKeysMeta = {
+                round: gameState.round,
+                player: gameState.currentPlayer,
+                keys: standardIncomeContinentKeys
+              };
+            } catch (eStdMeta) {
+              /* ignore */
             }
             try {
               delete gameState.risqueConquestAttackEntryTurnKey;

@@ -763,6 +763,7 @@
         if (window.gameUtils && typeof window.gameUtils.clearRisqueConquestAttackStartSession === "function") {
           window.gameUtils.clearRisqueConquestAttackStartSession();
         }
+        delete gameState.risqueConquestStandardIncomeContinentKeysMeta;
         clearedConquestIncome = true;
       }
       if (clearedConquestIncome) {

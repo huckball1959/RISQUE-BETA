@@ -157,7 +157,10 @@
         return;
       }
       var currentPlayer = gameState.players.find(function (p) {
-        return p.name === gameState.currentPlayer;
+        return (
+          p &&
+          String(p.name || "").toUpperCase() === String(gameState.currentPlayer || "").toUpperCase()
+        );
       });
       if (!currentPlayer) {
         logToStorage("Current player not found");

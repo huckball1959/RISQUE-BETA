@@ -405,6 +405,7 @@
         if (window.gameUtils && typeof window.gameUtils.clearRisqueConquestAttackStartSession === "function") {
           window.gameUtils.clearRisqueConquestAttackStartSession();
         }
+        delete gs.risqueConquestStandardIncomeContinentKeysMeta;
         try {
           persist(gs);
         } catch (eSave) {
