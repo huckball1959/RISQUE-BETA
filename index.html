@@ -40,6 +40,27 @@
     }
     .hint { margin: 14px 0 0; font-size: 13px; color: #94a3b8; }
     .tools-divider { margin: 18px 0 10px; padding-top: 14px; border-top: 1px solid #374151; font-size: 13px; color: #94a3b8; }
+    .quick-launch {
+      width: min(560px, 94vw);
+      background: #111827;
+      border: 1px solid #374151;
+      border-radius: 12px;
+      padding: 18px;
+      box-sizing: border-box;
+      color: #e5e7eb;
+      text-align: center;
+    }
+    .quick-launch h2 { margin: 0 0 10px; font-size: 1.2rem; }
+    .quick-launch p { margin: 0 0 12px; color: #94a3b8; }
+    .quick-launch button {
+      width: min(420px, 92%);
+      min-height: 52px;
+      font-size: 16px;
+      font-weight: 800;
+      background: #22c55e;
+      color: #04130a;
+      border: 2px solid #15803d;
+    }
   </style>
   <script src="js/risque-external-urls.js"></script>
 </head>
@@ -48,7 +69,7 @@
     <h1>RISQUE</h1>
     <p class="sub">Debug / extras (<code>?menu=1</code>). Normal use opens the host login automatically.</p>
     <div class="row">
-      <button type="button" id="btnGameLogin">Game login + TV tab</button>
+      <button type="button" id="btnGameLogin">Game login + TV (two windows)</button>
       <button type="button" id="btnRuntime">Runtime shell</button>
       <button type="button" id="btnRisque">Host login only</button>
       <button type="button" id="btnClearLogs">Clear logs</button>
@@ -59,6 +80,12 @@
       <a href="docs/manual.html">Manual</a> · <a href="docs/help.html">Help</a> ·
       <a href="game.html">Runtime shell</a> · <a href="index.html">Launcher (redirect)</a>
     </p>
+  </main>
+
+  <main id="quick-launch" class="quick-launch" hidden>
+    <h2>Start Host + Public</h2>
+    <p>Host opens in a normal browser tab. Public opens in a second window (pop-up). If Chrome blocks the TV window, allow pop-ups for this page.</p>
+    <button type="button" id="btnStartDual">OPEN HOST + PUBLIC</button>
   </main>
 
   <noscript>
@@ -78,30 +105,127 @@
           : "game.html?phase=login&loginLegacyNext=game.html%3Fphase%3DplayerSelect%26selectKind%3DfirstCard&loginLoadRedirect=game.html%3Fphase%3Dcardplay%26legacyNext%3Dincome.html";
       }
 
-      function openPublicTv() {
+      /**
+       * Chrome: any width/height in the third argument makes a *popup* with minimal chrome (often no tab strip).
+       * Use this only for the public TV window — never for the host.
+       */
+      function chromePopupFeatures(left, top, width, height) {
+        /* Do not clamp L/T to 0 — extended displays may use negative availLeft/Top. */
+        var L = Math.floor(left);
+        var T = Math.floor(top);
+        var W = Math.max(400, Math.floor(width));
+        var H = Math.max(320, Math.floor(height));
+        return (
+          "left=" +
+          L +
+          ",top=" +
+          T +
+          ",width=" +
+          W +
+          ",height=" +
+          H +
+          ",menubar=no,toolbar=no,location=yes,resizable=yes,scrollbars=yes,status=no"
+        );
+      }
+
+      function publicTvUrl() {
+        var u = new URL("game.html", window.location.href);
+        u.searchParams.set("display", "public");
+        u.searchParams.set("tvBootstrap", "1");
+        u.searchParams.delete("phase");
+        u.searchParams.delete("legacyNext");
+        u.searchParams.delete("selectKind");
+        u.searchParams.delete("loginLegacyNext");
+        u.searchParams.delete("loginLoadRedirect");
+        u.searchParams.delete("next");
+        return u.pathname + u.search + u.hash;
+      }
+
+      function clearPublicMirrorKeys() {
         try {
-          try {
-            localStorage.removeItem("risquePublicMirrorState");
-            localStorage.removeItem("risquePublicCursorMirror");
-          } catch (eClr) {}
-          var u = new URL("game.html", window.location.href);
-          u.searchParams.set("display", "public");
-          u.searchParams.set("tvBootstrap", "1");
-          u.searchParams.delete("phase");
-          u.searchParams.delete("legacyNext");
-          u.searchParams.delete("selectKind");
-          u.searchParams.delete("loginLegacyNext");
-          u.searchParams.delete("loginLoadRedirect");
-          u.searchParams.delete("next");
-          window.open(u.pathname + u.search + u.hash, "risquePublicBoard", "noopener,noreferrer");
-        } catch (e0) {}
+          localStorage.removeItem("risquePublicMirrorState");
+          localStorage.removeItem("risquePublicCursorMirror");
+        } catch (eClr) {}
+      }
+
+      /** Same work-area as a maximized window — public TV only (popup chrome). */
+      function fullWorkAreaPopupFeatures() {
+        var ax = typeof screen.availLeft === "number" ? screen.availLeft : 0;
+        var ay = typeof screen.availTop === "number" ? screen.availTop : 0;
+        var aw = screen.availWidth || screen.width || 1280;
+        var ah = screen.availHeight || screen.height || 720;
+        return chromePopupFeatures(ax, ay, aw, ah);
+      }
+
+      function openPublicGameWindow() {
+        try {
+          clearPublicMirrorKeys();
+          var url = publicTvUrl();
+          var feats = fullWorkAreaPopupFeatures();
+          return window.open(url, "risquePublicBoard", feats);
+        } catch (e0) {
+          return null;
+        }
+      }
+
+      function openHostGameWindow() {
+        try {
+          /*
+           * No third-argument window features: Chrome opens a normal tab (full tab bar), not a sized popup.
+           * Reuse name so a second launch targets the same host tab instead of piling up duplicates.
+           */
+          return window.open(gameLoginUrl(), "risqueHostBoard");
+        } catch (e1) {
+          return null;
+        }
+      }
+
+      function showLauncherDoneUi() {
+        try {
+          document.body.innerHTML =
+            '<main class="panel" style="margin:24px auto">' +
+            "<h1>RISQUE</h1>" +
+            "<p class=\"sub\">Host should be in a new tab (tab bar visible). Public is a separate TV window. You can close this launcher tab.</p>" +
+            "</main>";
+        } catch (eUi) {}
+        try {
+          window.close();
+        } catch (eClose) {}
+      }
+
+      function tryOpenDualWindows() {
+        /* Host: normal tab in this browser window. Public: separate popup on top of any stack. */
+        var hostWin = openHostGameWindow();
+        var pubWin = openPublicGameWindow();
+        var okHost = !!(hostWin && !hostWin.closed);
+        var okPub = !!(pubWin && !pubWin.closed);
+        if (okHost && okPub) {
+          showLauncherDoneUi();
+          return true;
+        }
+        return false;
       }
 
       var ns = document.getElementById("noscript-login");
       if (ns) ns.href = gameLoginUrl();
 
       if (!/\bmenu=1\b/.test(location.search)) {
-        window.location.replace(gameLoginUrl());
+        if (tryOpenDualWindows()) {
+          return;
+        }
+        var quick = document.getElementById("quick-launch");
+        if (quick) quick.hidden = false;
+        var btnDual = document.getElementById("btnStartDual");
+        if (btnDual) {
+          btnDual.onclick = function () {
+            if (!tryOpenDualWindows()) {
+              alert(
+                "Chrome blocked one or both pop-up windows.\n\n" +
+                  "Allow pop-ups for this folder/site, then click OPEN HOST + PUBLIC again."
+              );
+            }
+          };
+        }
         return;
       }
 
@@ -109,8 +233,9 @@
       if (dbg) dbg.hidden = false;
 
       document.getElementById("btnGameLogin").onclick = function () {
-        openPublicTv();
-        window.location.href = gameLoginUrl();
+        if (!tryOpenDualWindows()) {
+          alert("Could not open both windows. Allow pop-ups and try again, or use OPEN HOST + PUBLIC.");
+        }
       };
       document.getElementById("btnRuntime").onclick = function () {
         window.location.href = "game.html";

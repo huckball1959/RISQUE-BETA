@@ -7335,6 +7335,27 @@
     window.location.href = risqueDoc("index");
   });
 
+  var btnMovePublic = document.getElementById("btnMovePublic");
+  if (btnMovePublic) {
+    if (window.risqueDisplayIsPublic) {
+      btnMovePublic.hidden = true;
+    } else {
+      btnMovePublic.addEventListener("click", function () {
+        try {
+          if (typeof window.risqueOpenPublicDisplayWindow === "function") {
+            window.risqueOpenPublicDisplayWindow();
+          }
+        } catch (eMovePub) {
+          /* ignore */
+        }
+        render(
+          state,
+          "Click the public window, then press Win+Shift+Right (or Win+Shift+Left)."
+        );
+      });
+    }
+  }
+
   document.getElementById("btnSave").addEventListener("click", function () {
     triggerHostQuickSave("devtools");
   });
@@ -7393,9 +7414,84 @@
     return u.pathname + u.search + u.hash;
   }
 
+  function popupFeaturesForBounds(bounds) {
+    var L = Math.floor(bounds.left);
+    var T = Math.floor(bounds.top);
+    var W = Math.max(400, Math.floor(bounds.width));
+    var H = Math.max(320, Math.floor(bounds.height));
+    return (
+      "left=" +
+      L +
+      ",top=" +
+      T +
+      ",width=" +
+      W +
+      ",height=" +
+      H +
+      ",menubar=no,toolbar=no,location=yes,resizable=yes,scrollbars=yes,status=no"
+    );
+  }
+
+  function currentScreenBoundsFallback() {
+    var left = typeof screen.availLeft === "number" ? screen.availLeft : typeof window.screenX === "number" ? window.screenX : 0;
+    var top = typeof screen.availTop === "number" ? screen.availTop : typeof window.screenY === "number" ? window.screenY : 0;
+    var width = screen.availWidth || screen.width || 1280;
+    var height = screen.availHeight || screen.height || 720;
+    return { left: left, top: top, width: width, height: height };
+  }
+
   window.risqueOpenPublicDisplayWindow = function () {
     try {
-      window.open(buildPublicDisplayUrl(), "risquePublicBoard", "noopener,noreferrer");
+      var url = buildPublicDisplayUrl();
+      var baseBounds = currentScreenBoundsFallback();
+      var popup = window.open(url, "risquePublicBoard", popupFeaturesForBounds(baseBounds));
+      if (!popup) {
+        window.alert("Popup blocked. Allow popups for this site, then click Public again.");
+        return;
+      }
+      try {
+        popup.focus();
+      } catch (eFocus) {
+        /* ignore */
+      }
+
+      if (!("getScreenDetails" in window)) return;
+      window
+        .getScreenDetails()
+        .then(function (sd) {
+          if (!sd || !Array.isArray(sd.screens) || sd.screens.length < 2) return;
+          var cur = sd.currentScreen || null;
+          var target = null;
+          for (var i = 0; i < sd.screens.length; i++) {
+            var s = sd.screens[i];
+            var same =
+              cur &&
+              s &&
+              s.left === cur.left &&
+              s.top === cur.top &&
+              s.width === cur.width &&
+              s.height === cur.height;
+            if (!same) {
+              target = s;
+              break;
+            }
+          }
+          if (!target) return;
+          var left = typeof target.availLeft === "number" ? target.availLeft : target.left;
+          var top = typeof target.availTop === "number" ? target.availTop : target.top;
+          var width = typeof target.availWidth === "number" ? target.availWidth : target.width;
+          var height = typeof target.availHeight === "number" ? target.availHeight : target.height;
+          try {
+            popup.moveTo(left, top);
+            popup.resizeTo(width, height);
+            popup.focus();
+          } catch (eMove) {
+            /* ignore */
+          }
+        })
+        .catch(function () {
+          /* ignore */
+        });
     } catch (e1) {
       console.warn("risqueOpenPublicDisplayWindow:", e1);
     }

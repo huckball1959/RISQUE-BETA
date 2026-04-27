@@ -1,12 +1,10 @@
 #Requires -Version 5.0
-$ErrorActionPreference = "Stop"
+param(
+    [switch]$UseHttp,
+    [int]$Port = 5500
+)
 
-$p = $env:RISQUE_PORT
-if ([string]::IsNullOrWhiteSpace($p)) { $p = "5500" }
-$base = "http://127.0.0.1:$p"
-$hostUrl = "$base/index.html"
-# Same shape as index.html "Open public board" (game-shell expects display=public, tvBootstrap clears stale phase)
-$publicUrl = "$base/game.html?display=public&tvBootstrap=1"
+$ErrorActionPreference = "Stop"
 
 Add-Type -AssemblyName System.Windows.Forms
 
@@ -23,9 +21,27 @@ function Get-BrowserPath {
 }
 
 $exe = Get-BrowserPath
-if (-not $exe) {
-    Write-Host "ERROR: Chrome or Edge not found in standard locations." -ForegroundColor Red
-    exit 1
+
+function To-FileUrl {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    return ([System.Uri]::new($Path)).AbsoluteUri
+}
+
+$repoRoot = Split-Path -Parent $PSScriptRoot
+if ($UseHttp) {
+    $base = "http://127.0.0.1:$Port"
+    $hostUrl = "$base/index.html"
+    # Same shape as index.html "Open public board" (game-shell expects display=public, tvBootstrap clears stale phase).
+    $publicUrl = "$base/game.html?display=public&tvBootstrap=1"
+} else {
+    $indexPath = Join-Path $repoRoot "index.html"
+    $gamePath = Join-Path $repoRoot "game.html"
+    if (!(Test-Path -LiteralPath $indexPath) -or !(Test-Path -LiteralPath $gamePath)) {
+        Write-Host "ERROR: Could not find index.html/game.html in $repoRoot" -ForegroundColor Red
+        exit 1
+    }
+    $hostUrl = To-FileUrl -Path $indexPath
+    $publicUrl = (To-FileUrl -Path $gamePath) + "?display=public&tvBootstrap=1"
 }
 
 $hostDir = Join-Path $env:TEMP "risque-chrome-host"
@@ -74,7 +90,12 @@ function Start-BrowserOnBounds {
         $args += "--start-maximized"
     }
     $args += $Url
-    Start-Process -FilePath $exe -ArgumentList $args -WindowStyle Normal
+    if ($exe) {
+        Start-Process -FilePath $exe -ArgumentList $args -WindowStyle Normal
+    } else {
+        # Fallback: use default browser if Chrome/Edge executable path is unavailable.
+        Start-Process -FilePath $Url
+    }
 }
 
 $pb = $primary.Bounds
@@ -90,6 +111,11 @@ if ($null -eq $secondary) {
 $sb = $secondary.Bounds
 Write-Host "Primary:   $($primary.DeviceName) @ $($pb.Left),$($pb.Top) size $($pb.Width)x$($pb.Height)"
 Write-Host "Secondary: $($secondary.DeviceName) @ $($sb.Left),$($sb.Top) size $($sb.Width)x$($sb.Height)"
+if ($UseHttp) {
+    Write-Host "Launch mode: HTTP ($hostUrl)"
+} else {
+    Write-Host "Launch mode: local file URLs"
+}
 
 # Laptop is often primary (built-in); projector/TV as extended — host on primary, TV on secondary.
 Start-BrowserOnBounds -UserDataDir $hostDir -Bounds $pb -Url $hostUrl -Fullscreen

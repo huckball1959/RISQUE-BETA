@@ -6835,13 +6835,9 @@ body.risque-view-host.runtime-page {
   background: #000000 !important;
 }
 /*
- * Public TV: hide the real OS cursor — pointer is duplicated from the host via localStorage
- * (#risque-public-cursor-mirror). During private card phases we also hide the duplicate (JS).
+ * Public TV: keep the real OS cursor visible (stage often fills the viewport — scoped cursor:none
+ * still hid it everywhere). The host pointer duplicate (#risque-public-cursor-mirror) remains optional.
  */
-body.risque-view-public,
-body.risque-view-public * {
-  cursor: none !important;
-}
 
 /* Arrow matching default pointer — position set in JS from host-normalized coords */
 #risque-public-cursor-mirror {

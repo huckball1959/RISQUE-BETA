@@ -75,6 +75,8 @@
       "#risque-login-overlay .login-doc-button{flex:1;min-width:120px;max-width:200px;padding:8px 10px;font-size:13px;font-weight:bold;border:2px solid #14532d;border-radius:4px;cursor:pointer;pointer-events:auto;background:#00ff00;color:#000;transition:opacity 2s ease,background .15s;text-transform:uppercase;}" +
       "#risque-login-overlay .login-doc-button:hover{background:#00cc00;border-color:#166534;}" +
       "#risque-login-overlay .login-doc-button.fade-out{opacity:0;}" +
+      ".risque-login-center-move{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:1000001;min-width:360px;max-width:min(82vw,520px);padding:14px 16px;border:3px solid #facc15;border-radius:10px;background:#111827;color:#f8fafc;font-weight:900;font-size:18px;letter-spacing:.02em;text-transform:uppercase;cursor:pointer;box-shadow:0 0 0 2px rgba(0,0,0,.45),0 10px 28px rgba(0,0,0,.45);}" +
+      ".risque-login-center-move:hover{background:#1f2937;border-color:#fde047;}" +
       "#risque-login-overlay #login-js-error{color:#ff6b6b;text-align:center;margin-top:8px;font-size:14px;min-height:20px;}" +
       "#risque-login-overlay #load-game-input-js{display:none;}" +
       "#risque-login-overlay .risque-login-preset-bar{display:grid;grid-template-columns:repeat(6,minmax(0,1fr)) minmax(0,min(140px,34%));gap:4px;width:100%;max-width:520px;margin:10px auto 0;align-items:stretch;box-sizing:border-box;}" +
@@ -249,6 +251,41 @@
     } catch (e) {
       console.warn("Login log write skipped", e);
     }
+  }
+
+  function wirePublicWindowMoveHelper(root, elError, onLog) {
+    if (!root) return;
+    var btns = root.querySelectorAll(".login-monitor-move-btn");
+    if (!btns || !btns.length) return;
+    if (window.risqueDisplayIsPublic) {
+      Array.prototype.forEach.call(btns, function (b) {
+        b.style.display = "none";
+      });
+      return;
+    }
+    Array.prototype.forEach.call(btns, function (monitorBtn) {
+      monitorBtn.addEventListener("click", function () {
+        try {
+          if (typeof window.risqueOpenPublicDisplayWindow === "function") {
+            window.risqueOpenPublicDisplayWindow();
+          } else {
+            var u = new URL("game.html", window.location.href);
+            u.searchParams.set("display", "public");
+            u.searchParams.set("tvBootstrap", "1");
+            window.open(u.pathname + u.search + u.hash, "risquePublicBoard", "noopener,noreferrer");
+          }
+        } catch (eOpen) {
+          /* ignore */
+        }
+        if (elError) {
+          elError.textContent =
+            "Public window helper: click the public window, then press Win+Shift+Right (or Win+Shift+Left).";
+        }
+        if (typeof onLog === "function") {
+          onLog("Public window move helper shown");
+        }
+      });
+    });
   }
 
   function resizeLoginCanvas(overlay) {
@@ -991,6 +1028,7 @@
 
     host.innerHTML =
       '<div id="risque-login-embedded-root" class="risque-login-embedded-root">' +
+      '<button type="button" class="risque-login-center-move login-monitor-move-btn" id="login-monitor-center-btn">MOVE PUBLIC WINDOW (WIN+SHIFT+ARROW)</button>' +
       '<div class="mgm-embedded-login-welcome"></div>' +
       '<div class="login-prompt"></div>' +
       '<div class="color-swatches">' +
@@ -1007,7 +1045,9 @@
       '<div class="login-docs-row">' +
       '<button type="button" class="login-doc-button" id="login-manual-btn">GAME MANUAL</button>' +
       '<button type="button" class="login-doc-button" id="login-help-btn">HELP</button>' +
+      '<button type="button" class="login-doc-button login-doc-button--monitor login-monitor-move-btn" id="login-monitor-btn">MOVE PUBLIC WINDOW</button>' +
       "</div>" +
+      '<button type="button" class="load-button login-monitor-move-btn" id="login-monitor-btn-main">MOVE PUBLIC WINDOW (WIN+SHIFT+ARROW)</button>' +
       '<button type="button" class="login-button" id="login-button-js">LOG IN</button>' +
       buildLoginPresetBarHtml() +
       '<button type="button" class="load-button" id="load-button-js">LOAD GAME</button>' +
@@ -1136,6 +1176,7 @@
           window.open(helpUrl, "_blank", "noopener,noreferrer");
         });
       }
+      wirePublicWindowMoveHelper(root, elError, onLog);
     }
 
     loginButton.addEventListener("click", function () {
@@ -1277,6 +1318,7 @@
     overlay.setAttribute("aria-label", "RISQUE login");
     overlay.innerHTML =
       "<div class=\"risque-login-canvas\">" +
+      "<button type=\"button\" class=\"risque-login-center-move login-monitor-move-btn\" id=\"login-monitor-center-btn\">MOVE PUBLIC WINDOW (WIN+SHIFT+ARROW)</button>" +
       "<div class=\"welcome-text\"></div>" +
       "<div class=\"login-container\">" +
       "<div class=\"login-prompt\"></div>" +
@@ -1292,7 +1334,9 @@
       "<div class=\"login-docs-row\">" +
       "<button type=\"button\" class=\"login-doc-button\" id=\"login-manual-btn\">GAME MANUAL</button>" +
       "<button type=\"button\" class=\"login-doc-button\" id=\"login-help-btn\">HELP</button>" +
+      "<button type=\"button\" class=\"login-doc-button login-doc-button--monitor login-monitor-move-btn\" id=\"login-monitor-btn\">MOVE PUBLIC WINDOW</button>" +
       "</div>" +
+      "<button type=\"button\" class=\"load-button login-monitor-move-btn\" id=\"login-monitor-btn-main\">MOVE PUBLIC WINDOW (WIN+SHIFT+ARROW)</button>" +
       "<button type=\"button\" class=\"login-button\" id=\"login-button-js\">LOG IN</button>" +
       buildLoginPresetBarHtml() +
       "<button type=\"button\" class=\"load-button\" id=\"load-button-js\">LOAD GAME</button>" +
@@ -1429,6 +1473,7 @@
           window.open(helpUrl, "_blank", "noopener,noreferrer");
         });
       }
+      wirePublicWindowMoveHelper(overlay, elError, onLog);
     }
 
     function onResize() {
