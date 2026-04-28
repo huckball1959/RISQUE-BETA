@@ -3311,7 +3311,7 @@ function instantCampaignPlanningMirrorOpts() {
     return null;
   }
   if (campaignPath.length >= 2) {
-    return { mirrorPrimary: `${cur} is selecting his war path` };
+    return { mirrorPrimary: `${cur} is selecting the war path` };
   }
   return { mirrorPrimary: `${cur} launches campaign from ${prettyTerritoryName(campaignPath[0])}` };
 }
@@ -3645,7 +3645,7 @@ function performInstantCommitFromKeys() {
   prependCombatLog(`Campaign: path committed (${pathLine}). Click Begin to execute.`, 'system');
   const curCommit = window.gameState && window.gameState.currentPlayer;
   if ((campaignType === 'instant' || campaignType === 'pause') && curCommit) {
-    paintInstantCampaignHud('', { mirrorPrimary: `${curCommit} has committed his path` });
+    paintInstantCampaignHud('', { mirrorPrimary: `${curCommit} has committed the war path` });
   } else {
     paintInstantCampaignHud('');
   }
