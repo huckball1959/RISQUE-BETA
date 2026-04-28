@@ -204,10 +204,216 @@
     }
 
     var CARDPLAY_RECAP_ACK_KEY = "risquePublicCardplayRecapAck";
+    var AERIAL_COUNTER_DECISION_KEY = "risquePublicAerialCounterDecision";
+    var AERIAL_DECISION_READY_KEY = "risquePublicAerialDecisionReady";
+    var CARDPLAY_PROCESSING_STATE_KEY = "risquePublicCardplayProcessingState";
+
+    function cardplayFindPendingAerialAction() {
+      if (!Array.isArray(playedCards)) return null;
+      for (var i = 0; i < playedCards.length; i += 1) {
+        var pc = playedCards[i];
+        if (pc && pc.action === "aerial_attack") return { index: i, action: pc };
+      }
+      return null;
+    }
+
+    function cardplayRequiredCounterWildcardForPendingAerial() {
+      var pending = cardplayFindPendingAerialAction();
+      if (!pending || !pending.action || !pending.action.cards || !pending.action.cards[0]) return "";
+      var played = String(pending.action.cards[0].card || "").toLowerCase();
+      if (played === "wildcard1") return "wildcard2";
+      if (played === "wildcard2") return "wildcard1";
+      return "";
+    }
+
+    function cardplayGetAerialDecisionForReqSeq(reqSeq) {
+      if (reqSeq == null || reqSeq === "") return null;
+      try {
+        var raw = localStorage.getItem(AERIAL_COUNTER_DECISION_KEY);
+        if (!raw) return null;
+        var d = JSON.parse(raw);
+        if (!d || Number(d.seq) !== Number(reqSeq)) return null;
+        return d;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function cardplayIsAerialDecisionReady(reqSeq) {
+      if (reqSeq == null || reqSeq === "") return false;
+      try {
+        var raw = localStorage.getItem(AERIAL_DECISION_READY_KEY);
+        if (!raw) return false;
+        var d = JSON.parse(raw);
+        return !!(d && d.ready === true && Number(d.seq) === Number(reqSeq));
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function cardplayIsPublicProcessingDone(reqSeq) {
+      if (reqSeq == null || reqSeq === "") return false;
+      try {
+        var raw = localStorage.getItem(CARDPLAY_PROCESSING_STATE_KEY);
+        if (!raw) return false;
+        var s = JSON.parse(raw);
+        return !!(s && Number(s.seq) === Number(reqSeq) && String(s.state || "") === "done");
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function cardplayAerialCounterHoldActive(reqSeq) {
+      var d = cardplayGetAerialDecisionForReqSeq(reqSeq);
+      if (!d || String(d.choice || "") !== "countered") return false;
+      var holdUntil = Number(d.holdUntilMs || 0);
+      if (!holdUntil) return false;
+      return Date.now() < holdUntil;
+    }
+
+    function cardplayPlayerHasSpecificWildcard(playerName, wildcardName) {
+      if (!window.gameState || !Array.isArray(window.gameState.players)) return false;
+      var p = window.gameState.players.find(function (x) {
+        return x && String(x.name || "") === String(playerName || "");
+      });
+      if (!p || !Array.isArray(p.cards)) return false;
+      var want = String(wildcardName || "").toLowerCase();
+      return p.cards.some(function (c) {
+        return c && c.name && String(c.name).toLowerCase() === want;
+      });
+    }
+
+    function cardplayGetOpposingPlayers() {
+      if (!window.gameState || !Array.isArray(window.gameState.players)) return [];
+      var cur = String(window.gameState.currentPlayer || "");
+      return window.gameState.players
+        .filter(function (p) {
+          return p && String(p.name || "") !== cur;
+        })
+        .map(function (p) {
+          return String(p.name || "");
+        });
+    }
+
+    function cardplayFindAndConsumeCounterWildcard(ownerName, requiredWildcard) {
+      if (!window.gameState || !Array.isArray(window.gameState.players)) return null;
+      var current = String(window.gameState.currentPlayer || "");
+      var players = window.gameState.players;
+      var preferred = ownerName != null ? String(ownerName) : "";
+      var req = String(requiredWildcard || "").toLowerCase();
+      function tryConsumeFromPlayer(p) {
+        if (!p || !Array.isArray(p.cards)) return null;
+        var ci;
+        for (ci = 0; ci < p.cards.length; ci += 1) {
+          var c = p.cards[ci];
+          var nm = c && c.name != null ? String(c.name).toLowerCase() : "";
+          if ((req && nm === req) || (!req && (nm === "wildcard1" || nm === "wildcard2"))) {
+            var removed = p.cards.splice(ci, 1)[0];
+            p.cardCount = p.cards.length;
+            return {
+              player: String(p.name || ""),
+              card: removed && removed.name ? String(removed.name).toLowerCase() : nm
+            };
+          }
+        }
+        return null;
+      }
+      if (preferred) {
+        var pPref = players.find(function (p0) {
+          return p0 && String(p0.name || "") === preferred;
+        });
+        if (pPref && String(pPref.name || "") !== current) {
+          var usedPref = tryConsumeFromPlayer(pPref);
+          if (usedPref) return usedPref;
+          return null;
+        }
+        return null;
+      }
+      var i;
+      for (i = 0; i < players.length; i += 1) {
+        var p = players[i];
+        if (!p || String(p.name || "") === current) continue;
+        var used = tryConsumeFromPlayer(p);
+        if (used) return used;
+      }
+      return null;
+    }
+
+    function applyPendingAerialCounterDecision() {
+      if (!window.gameState || window.risqueDisplayIsPublic) return false;
+      var reqSeq = window.gameState.risquePublicCardplayRecapAckRequiredSeq;
+      if (reqSeq == null || reqSeq === "") return false;
+      var raw = null;
+      try {
+        raw = localStorage.getItem(AERIAL_COUNTER_DECISION_KEY);
+      } catch (eRaw) {
+        raw = null;
+      }
+      if (!raw) return false;
+      var msg;
+      try {
+        msg = JSON.parse(raw);
+      } catch (eParse) {
+        return false;
+      }
+      if (!msg || Number(msg.seq) !== Number(reqSeq)) return false;
+      if (String(msg.phase || "") !== "cardplay") return false;
+      if (String(msg.choice || "") !== "countered") return false;
+      var pending = cardplayFindPendingAerialAction();
+      if (!pending || pending.index < 0) return false;
+      var requiredCounter = cardplayRequiredCounterWildcardForPendingAerial();
+      var consumed = cardplayFindAndConsumeCounterWildcard(msg.counterPlayer, requiredCounter);
+      if (!consumed) {
+        try {
+          localStorage.removeItem(AERIAL_COUNTER_DECISION_KEY);
+        } catch (eClrInvalid) {}
+        setCardplayError(
+          String(msg.counterPlayer || "Selected player") +
+            " does not have the required counter wildcard. Confirm to continue."
+        );
+        return false;
+      }
+      playedCards.splice(pending.index, 1);
+      if (window.gameUtils && typeof window.gameUtils.addAerialAttackUses === "function") {
+        window.gameUtils.addAerialAttackUses(window.gameState, -1);
+      } else {
+        window.gameState.aerialAttackEligible = false;
+      }
+      window.gameState.aerialAttack = false;
+      summaryMessages.push(
+        "Aerial attack countered by " + consumed.player + " (" + String(consumed.card || "wildcard").toUpperCase() + ")."
+      );
+      window.gameState.risquePublicCardplayPrimary =
+        "Aerial attack countered by " + String(consumed.player || "opponent") + ".";
+      window.gameState.risquePublicCardplayReport = "Original aerial attack is void.";
+      try {
+        localStorage.setItem("gameState", JSON.stringify(window.gameState));
+      } catch (eSave) {}
+      if (typeof window.risqueMirrorPushGameState === "function") {
+        window.risqueMirrorPushGameState();
+      }
+      updateSummaryDisplay();
+      checkCardStatus();
+      return true;
+    }
 
     function cardplayRecapAckSatisfied() {
+      applyPendingAerialCounterDecision();
       var req = window.gameState && window.gameState.risquePublicCardplayRecapAckRequiredSeq;
       if (req == null || req === "") return true;
+      var pendingAerial = cardplayFindPendingAerialAction();
+      if (pendingAerial) {
+        try {
+          var rawDec = localStorage.getItem(AERIAL_COUNTER_DECISION_KEY);
+          if (!rawDec) return false;
+          var d = JSON.parse(rawDec);
+          if (Number(d.seq) !== Number(req)) return false;
+          var choice = String((d && d.choice) || "");
+          if (choice !== "confirmed" && choice !== "countered") return false;
+        } catch (eDec) {
+          return false;
+        }
+      }
       try {
         var raw = localStorage.getItem(CARDPLAY_RECAP_ACK_KEY);
         if (!raw) return false;
@@ -223,6 +429,10 @@
       if (window.__risqueHostIncomeGatePoll) {
         clearInterval(window.__risqueHostIncomeGatePoll);
         window.__risqueHostIncomeGatePoll = null;
+      }
+      if (window.__risqueHostAutoIncomeTimer) {
+        clearTimeout(window.__risqueHostAutoIncomeTimer);
+        window.__risqueHostAutoIncomeTimer = null;
       }
     }
 
@@ -638,11 +848,81 @@
       return (
         '<div class="cardplay-host-income-gate-panel">' +
         '<div id="cardplay-inline-error" class="cardplay-inline-error cardplay-host-income-gate-error" role="status"></div>' +
-        '<button type="button" id="cardplay-host-continue-income-btn" class="cardplay-host-continue-income-btn">' +
-        "Continue to Income" +
-        "</button>" +
+        '<div id="cardplay-host-aerial-decision" class="cardplay-host-aerial-decision" hidden>' +
+        '<div class="cardplay-host-aerial-decision-title">Aerial attack decision</div>' +
+        '<div class="cardplay-host-aerial-decision-row">' +
+        '<button type="button" id="cardplay-host-aerial-confirm-btn" class="cardplay-host-continue-income-btn">Confirm Aerial Attack</button>' +
+        '<button type="button" id="cardplay-host-aerial-counter-btn" class="cardplay-host-continue-income-btn">Aerial Attack Countered</button>' +
+        "</div>" +
+        '<div id="cardplay-host-aerial-counter-row" class="cardplay-host-aerial-decision-row" hidden>' +
+        '<select id="cardplay-host-aerial-counter-player" class="cardplay-host-aerial-select"></select>' +
+        "</div>" +
+        "</div>" +
+        '<div id="cardplay-host-auto-income-msg" class="cardplay-host-auto-income-msg">Card processing in progress...</div>' +
         "</div>"
       );
+    }
+
+    function wireHostAerialDecisionControls() {
+      var bConfirm = document.getElementById("cardplay-host-aerial-confirm-btn");
+      var bCounter = document.getElementById("cardplay-host-aerial-counter-btn");
+      var sel = document.getElementById("cardplay-host-aerial-counter-player");
+      var counterRow = document.getElementById("cardplay-host-aerial-counter-row");
+      if (!bConfirm || !bCounter || !sel || !counterRow) return;
+      if (!bConfirm.dataset.risqueWired) {
+        bConfirm.dataset.risqueWired = "1";
+        bConfirm.addEventListener("click", function () {
+          var req = window.gameState && window.gameState.risquePublicCardplayRecapAckRequiredSeq;
+          if (req == null || req === "") return;
+          try {
+            localStorage.setItem(
+              AERIAL_COUNTER_DECISION_KEY,
+              JSON.stringify({ seq: Number(req), choice: "confirmed", phase: "cardplay", at: Date.now() })
+            );
+          } catch (eC) {}
+          refreshHostIncomeGateUi();
+        });
+      }
+      if (!bCounter.dataset.risqueWired) {
+        bCounter.dataset.risqueWired = "1";
+        bCounter.addEventListener("click", function () {
+          counterRow.removeAttribute("hidden");
+          setCardplayError("Select the countering player.");
+          refreshHostIncomeGateUi();
+        });
+      }
+      if (!sel.dataset.risqueWired) {
+        sel.dataset.risqueWired = "1";
+        sel.addEventListener("change", function () {
+          var req = window.gameState && window.gameState.risquePublicCardplayRecapAckRequiredSeq;
+          var picked = String((sel && sel.value) || "");
+          var needed = cardplayRequiredCounterWildcardForPendingAerial();
+          if (!picked) {
+            setCardplayError("Choose a player to verify counter.");
+            return;
+          }
+          if (!cardplayPlayerHasSpecificWildcard(picked, needed)) {
+            setCardplayError(picked + " does not have the required counter wildcard.");
+            return;
+          }
+          if (req == null || req === "") return;
+          try {
+            localStorage.setItem(
+              AERIAL_COUNTER_DECISION_KEY,
+              JSON.stringify({
+                seq: Number(req),
+                choice: "countered",
+                counterPlayer: picked,
+                phase: "cardplay",
+                holdUntilMs: Date.now() + 5200,
+                at: Date.now()
+              })
+            );
+          } catch (eAp) {}
+          setCardplayError("Counter validated for " + picked + ".");
+          refreshHostIncomeGateUi();
+        });
+      }
     }
 
     /**
@@ -662,10 +942,10 @@
           ov.innerHTML = '<div class="cardplay-host-income-gate cardplay-host-income-gate--legacy">' + cardplayHostIncomeGateInnerHtml() + "</div>";
         }
       }
-      wireHostContinueToIncomeBtn(document.getElementById("cardplay-host-continue-income-btn"));
+      wireHostAerialDecisionControls();
       stopHostIncomeGateAckPoll();
       window.__risqueHostIncomeGatePoll = setInterval(function () {
-        if (!document.getElementById("cardplay-host-continue-income-btn")) {
+        if (!document.getElementById("cardplay-host-income-gate-root")) {
           stopHostIncomeGateAckPoll();
           return;
         }
@@ -684,15 +964,82 @@
     }
 
     function refreshHostIncomeGateUi() {
-      var btn = document.getElementById("cardplay-host-continue-income-btn");
-      if (!btn) return;
+      var autoMsg = document.getElementById("cardplay-host-auto-income-msg");
+      var aerialWrap = document.getElementById("cardplay-host-aerial-decision");
+      var bAerialConfirm = document.getElementById("cardplay-host-aerial-confirm-btn");
+      var bAerialCounter = document.getElementById("cardplay-host-aerial-counter-btn");
+      var aerialCounterRow = document.getElementById("cardplay-host-aerial-counter-row");
+      var aerialSelect = document.getElementById("cardplay-host-aerial-counter-player");
       var needAck =
         window.gameState && window.gameState.risquePublicCardplayRecapAckRequiredSeq != null;
-      var ackOk = !needAck || cardplayRecapAckSatisfied();
-      btn.disabled = !ackOk;
-      btn.title = ackOk
-        ? "Go to income when ready."
-        : "Wait until the public display finishes the card recap animation.";
+      var pendingAerial = !!cardplayFindPendingAerialAction();
+      var reqSeq = window.gameState && window.gameState.risquePublicCardplayRecapAckRequiredSeq;
+      var dec = cardplayGetAerialDecisionForReqSeq(reqSeq);
+      var aerialReady = cardplayIsAerialDecisionReady(reqSeq);
+      var decisionButtonsEnabled = !!aerialReady;
+      if (aerialWrap) {
+        if (
+          pendingAerial &&
+          needAck &&
+          !(dec && (dec.choice === "confirmed" || dec.choice === "countered"))
+        ) {
+          aerialWrap.removeAttribute("hidden");
+        } else {
+          aerialWrap.setAttribute("hidden", "");
+        }
+      }
+      if (bAerialConfirm) {
+        bAerialConfirm.disabled = !decisionButtonsEnabled;
+        bAerialConfirm.title = decisionButtonsEnabled
+          ? "Confirm aerial attack processing."
+          : "Waiting for public wildcard processing to reach aerial step.";
+      }
+      if (bAerialCounter) {
+        bAerialCounter.disabled = !decisionButtonsEnabled;
+        bAerialCounter.title = decisionButtonsEnabled
+          ? "Choose this if someone calls a valid counter."
+          : "Waiting for public wildcard processing to reach aerial step.";
+      }
+      if (aerialSelect) {
+        var players = cardplayGetOpposingPlayers();
+        var keep = String(aerialSelect.value || "");
+        aerialSelect.innerHTML = '<option value="">Choose countering player</option>';
+        players.forEach(function (nm) {
+          var opt = document.createElement("option");
+          opt.value = nm;
+          opt.textContent = nm;
+          aerialSelect.appendChild(opt);
+        });
+        if (keep && players.indexOf(keep) !== -1) aerialSelect.value = keep;
+      }
+      if (aerialCounterRow && (!pendingAerial || (dec && dec.choice === "countered"))) {
+        aerialCounterRow.setAttribute("hidden", "");
+      }
+      var counterHold = !!(needAck && cardplayAerialCounterHoldActive(reqSeq));
+      var publicDone = !needAck || cardplayIsPublicProcessingDone(reqSeq);
+      var ackOk = (!needAck || cardplayRecapAckSatisfied()) && !counterHold && publicDone;
+      if (autoMsg) {
+        autoMsg.textContent = ackOk
+          ? "Card processing complete. Moving to income..."
+          : pendingAerial && needAck && !aerialReady
+            ? "Waiting for public wildcard processing before aerial decision."
+          : !publicDone
+            ? "Waiting for public card processing to finish."
+          : counterHold
+            ? "Waiting for public counter animation to finish."
+            : "Card processing in progress...";
+      }
+      if (ackOk) {
+        if (!window.__risqueHostAutoIncomeTimer) {
+          window.__risqueHostAutoIncomeTimer = setTimeout(function () {
+            window.__risqueHostAutoIncomeTimer = null;
+            proceedCardplayToIncome(300);
+          }, 1700);
+        }
+      } else if (window.__risqueHostAutoIncomeTimer) {
+        clearTimeout(window.__risqueHostAutoIncomeTimer);
+        window.__risqueHostAutoIncomeTimer = null;
+      }
     }
 
     function updateCardplayTvGateVisibility() {
@@ -2564,11 +2911,24 @@
       return ids;
     }
 
+    function orderCardplayActionsForPublicProcessing(list) {
+      if (!Array.isArray(list)) return [];
+      var books = [];
+      var singles = [];
+      list.forEach(function (pc) {
+        if (!pc) return;
+        if (pc.action === "book") books.push(pc);
+        else singles.push(pc);
+      });
+      return books.concat(singles);
+    }
+
     function publishCardplayRecapToPublicMirror() {
       clearCardplayPublicBoardSnapshot();
       var nextSeq = (Number(window.gameState.risquePublicCardplayRecapSeq) || 0) + 1;
       window.gameState.risquePublicCardplayRecapSeq = nextSeq;
-      var pubRows = buildPublicRecapDisplayLines(playedCards);
+      var orderedForPublic = orderCardplayActionsForPublicProcessing(playedCards);
+      var pubRows = buildPublicRecapDisplayLines(orderedForPublic);
       window.gameState.risquePublicCardplayRecap = {
         seq: nextSeq,
         playerName: String(window.gameState.currentPlayer || "Player"),
@@ -2578,16 +2938,17 @@
         publicLineKinds: pubRows.map(function (r) {
           return r.kind;
         }),
-        cardIds: collectPlayedCardIdsForRecap(playedCards),
-        cardGroups: buildRecapCardGroups(playedCards)
+        cardIds: collectPlayedCardIdsForRecap(orderedForPublic),
+        cardGroups: buildRecapCardGroups(orderedForPublic)
       };
       window.gameState.risquePublicCardplayRecapAckRequiredSeq = nextSeq;
       window.gameState.risqueCardplaySuppressPublicSpectator = false;
       /* Invalidate any prior TV ack so the host cannot Continue until this recap’s animation finishes on public. */
       try {
         localStorage.removeItem(CARDPLAY_RECAP_ACK_KEY);
+        localStorage.removeItem(AERIAL_COUNTER_DECISION_KEY);
       } catch (eClrAck) {}
-      var flatIds = collectFlatCardIdsForPublicRecapAnim(playedCards);
+      var flatIds = collectFlatCardIdsForPublicRecapAnim(orderedForPublic);
       if (flatIds.length) {
         window.gameState.risquePublicCardplayBookCards = flatIds;
       } else {
@@ -2597,7 +2958,7 @@
       var disp = nm ? nm.charAt(0).toUpperCase() + nm.slice(1) : "Player";
       window.gameState.risquePublicCardplayPrimary = disp.toUpperCase() + " · CARD PLAY";
       if (typeof window.risqueBuildPublicCardplayRecapProcessingPayload === "function") {
-        var proc = window.risqueBuildPublicCardplayRecapProcessingPayload(playedCards, window.gameState);
+        var proc = window.risqueBuildPublicCardplayRecapProcessingPayload(orderedForPublic, window.gameState);
         if (proc && Array.isArray(proc.steps) && proc.steps.length > 0) {
           proc.seq = nextSeq;
           window.gameState.risquePublicBookProcessing = proc;
@@ -2781,6 +3142,11 @@
     if (!window.__risqueCardplayRecapStorageWired) {
       window.__risqueCardplayRecapStorageWired = true;
       window.addEventListener("storage", function (ev) {
+        if (ev.key === AERIAL_COUNTER_DECISION_KEY) {
+          try {
+            applyPendingAerialCounterDecision();
+          } catch (eCtr) {}
+        }
         if (ev.key !== "risquePublicCardplayRecapAck" || ev.newValue == null) return;
         try {
           if (

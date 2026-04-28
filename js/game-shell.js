@@ -200,6 +200,9 @@
   var PUBLIC_INCOME_GATE_ACK_KEY = "risquePublicIncomeGateAck";
   /** Avoid replaying the same committed-cardplay recap after reload (sessionStorage). */
   var RISQUE_SESSION_RECAP_SEQ_KEY = "risquePublicCardplayRecapDoneSeq";
+  var PUBLIC_AERIAL_COUNTER_DECISION_KEY = "risquePublicAerialCounterDecision";
+  var PUBLIC_AERIAL_DECISION_READY_KEY = "risquePublicAerialDecisionReady";
+  var PUBLIC_CARDPLAY_PROCESSING_STATE_KEY = "risquePublicCardplayProcessingState";
   /** Same entry URL as index.html when it sends you to the game login (fresh Live Server open). */
   var RISQUE_FRESH_START_URL =
     typeof window.risqueLoginRecoveryUrl === "function"
@@ -3349,7 +3352,7 @@
    * During map-processing steps, keep the card row under the CARD PLAY title; highlight the card tied to
    * this step (when known), dim finished cards, soften upcoming ones.
    */
-  function risquePublicBookSetVoiceProcessing(gs, step, stepIdx) {
+  function risquePublicBookSetVoiceProcessing(gs, step, stepIdx, onAerialPicked) {
     var vt = document.getElementById("control-voice-text");
     var vr = document.getElementById("control-voice-report");
     var cv = document.getElementById("control-voice");
@@ -3436,6 +3439,9 @@
           var recapBadge = risquePublicBookVoiceEffectBadgeForStep(step);
           if (recapBadge) {
             risquePublicBookAppendEffectBadgeEl(cardRow, recapBadge);
+          }
+          if (step && step.effect === "aerial_attack") {
+            risquePublicRenderAerialDecisionButtons(cardRow, proc, step, stepIdx, onAerialPicked);
           }
           cluster.appendChild(cardRow);
           if ((oneKey === "wildcard1" || oneKey === "wildcard2") && !recapBadge) {
@@ -3524,11 +3530,218 @@
     return stepIdx > 0 ? SHELF_UPPER_CLEAR_MS + SHELF_CROSSFADE_MS : SHELF_CROSSFADE_MS;
   }
 
+  function risquePublicWriteAerialDecision(seq, stepIdx, choice, counterPlayer) {
+    if (!window.risqueDisplayIsPublic) return;
+    try {
+      var payload = {
+        seq: Number(seq) || 0,
+        stepIdx: Number(stepIdx) || 0,
+        choice: String(choice || ""),
+        phase: "cardplay",
+        at: Date.now()
+      };
+      if (counterPlayer != null && String(counterPlayer).trim()) {
+        payload.counterPlayer = String(counterPlayer).trim();
+      }
+      localStorage.setItem(
+        PUBLIC_AERIAL_COUNTER_DECISION_KEY,
+        JSON.stringify(payload)
+      );
+    } catch (eAerialDecision) {
+      /* ignore */
+    }
+  }
+
+  function risquePublicRequiredCounterWildcard(step) {
+    var played = step && step.playedCardKey ? String(step.playedCardKey).toLowerCase() : "";
+    if (played === "wildcard1") return "wildcard2";
+    if (played === "wildcard2") return "wildcard1";
+    return "";
+  }
+
+  function risquePublicAerialCounterContext(gs, proc, step) {
+    if (!gs || !proc || !step || step.effect !== "aerial_attack") return null;
+    var required = risquePublicRequiredCounterWildcard(step);
+    var currentName = String((proc.playerName || gs.currentPlayer || "") + "");
+    var allOpposing = [];
+    var holders = [];
+    (gs.players || []).forEach(function (p) {
+      if (!p || String(p.name || "") === currentName) return;
+      allOpposing.push(String(p.name || ""));
+      var hasRequired =
+        !required ||
+        (Array.isArray(p.cards) &&
+          p.cards.some(function (c) {
+            return c && c.name && String(c.name).toLowerCase() === required;
+          }));
+      if (hasRequired) holders.push(String(p.name || ""));
+    });
+    return {
+      required: required,
+      allOpposing: allOpposing,
+      holders: holders
+    };
+  }
+
+  function risquePublicRenderAerialDecisionButtons(host, proc, step, stepIdx, onPicked) {
+    if (!host || !proc || !step || step.effect !== "aerial_attack") return false;
+    if (!window.risqueDisplayIsPublic || !risquePublicProcRecapAnimation(proc)) return false;
+    var gs = window.gameState;
+    var cx = risquePublicAerialCounterContext(gs, proc, step);
+    if (!cx) {
+      return false;
+    }
+    var row = document.createElement("div");
+    row.className = "risque-public-aerial-decision-row";
+    var btnConfirm = document.createElement("button");
+    btnConfirm.type = "button";
+    btnConfirm.className = "risque-public-aerial-decision-btn risque-public-aerial-decision-btn--confirm";
+    btnConfirm.textContent = "Confirm Aerial Attack";
+    var btnCounter = document.createElement("button");
+    btnCounter.type = "button";
+    btnCounter.className = "risque-public-aerial-decision-btn risque-public-aerial-decision-btn--counter";
+    btnCounter.textContent = "Aerial Attack Countered";
+    var select = document.createElement("select");
+    select.className = "risque-public-aerial-decision-select";
+    select.style.display = "none";
+    var ph = document.createElement("option");
+    ph.value = "";
+    ph.textContent = "Choose countering player";
+    select.appendChild(ph);
+    cx.allOpposing.forEach(function (nm) {
+      var o = document.createElement("option");
+      o.value = nm;
+      o.textContent = nm;
+      select.appendChild(o);
+    });
+    var msg = document.createElement("div");
+    msg.className = "risque-public-aerial-decision-msg";
+    var selectingCounter = false;
+    function setMsg(t) {
+      msg.textContent = t ? String(t) : "";
+      msg.style.display = t ? "block" : "none";
+    }
+    function lockAndResolve(choice, counterPlayer) {
+      btnConfirm.disabled = true;
+      btnCounter.disabled = true;
+      select.disabled = true;
+      setMsg("");
+      risquePublicWriteAerialDecision(proc.seq, stepIdx, choice, counterPlayer);
+      if (typeof onPicked === "function") onPicked(choice, counterPlayer);
+    }
+    btnConfirm.addEventListener("click", function () {
+      lockAndResolve("confirmed", "");
+    });
+    btnCounter.addEventListener("click", function () {
+      if (!selectingCounter) {
+        selectingCounter = true;
+        select.style.display = "inline-block";
+        setMsg("Select a player, then press Aerial Attack Countered again.");
+        return;
+      }
+      var picked = String(select.value || "");
+      if (!picked) {
+        setMsg("Pick a player to verify the counter.");
+        return;
+      }
+      if (cx.holders.indexOf(picked) === -1) {
+        setMsg(picked + " does not have the counter wildcard. Confirm to proceed.");
+        return;
+      }
+      lockAndResolve("countered", picked);
+    });
+    row.appendChild(select);
+    row.appendChild(btnConfirm);
+    row.appendChild(btnCounter);
+    row.appendChild(msg);
+    host.appendChild(row);
+    return true;
+  }
+
+  function risquePublicMountAerialDecisionPanel(proc, step, stepIdx, onPicked) {
+    if (!window.risqueDisplayIsPublic || !proc || !step || step.effect !== "aerial_attack") return false;
+    var upper = document.getElementById("risque-public-cp-shelf-upper-content");
+    var vt = document.getElementById("control-voice-text");
+    var host = upper || vt;
+    if (!host) return false;
+    var old = document.getElementById("risque-public-aerial-decision-portal");
+    if (old && old.parentNode) old.parentNode.removeChild(old);
+    var portal = document.createElement("div");
+    portal.id = "risque-public-aerial-decision-portal";
+    portal.className = "risque-public-aerial-decision-portal";
+    var mounted = risquePublicRenderAerialDecisionButtons(portal, proc, step, stepIdx, function (choice, counterPlayer) {
+      if (typeof onPicked === "function") onPicked(choice, counterPlayer);
+      var el = document.getElementById("risque-public-aerial-decision-portal");
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+    });
+    if (!mounted) return false;
+    host.appendChild(portal);
+    return true;
+  }
+
+  function risquePublicMountAerialDecisionOverlay(proc, step, stepIdx, onPicked) {
+    if (!window.risqueDisplayIsPublic || !proc || !step || step.effect !== "aerial_attack") return false;
+    var old = document.getElementById("risque-public-aerial-decision-overlay");
+    if (old && old.parentNode) old.parentNode.removeChild(old);
+    var overlay = document.createElement("div");
+    overlay.id = "risque-public-aerial-decision-overlay";
+    overlay.className = "risque-public-aerial-decision-overlay";
+    var panel = document.createElement("div");
+    panel.className = "risque-public-aerial-decision-overlay-panel";
+    var mounted = risquePublicRenderAerialDecisionButtons(panel, proc, step, stepIdx, function (choice, counterPlayer) {
+      if (typeof onPicked === "function") onPicked(choice, counterPlayer);
+      var el = document.getElementById("risque-public-aerial-decision-overlay");
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+    });
+    if (!mounted) return false;
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+    return true;
+  }
+
+  function risquePublicShowAerialCancelledForStep(step, done) {
+    var host = document.getElementById("risque-public-cp-shelf-upper-content");
+    if (!host) {
+      if (typeof done === "function") done();
+      return;
+    }
+    var cardKey = step && step.playedCardKey ? String(step.playedCardKey).toLowerCase() : "";
+    if (!cardKey) {
+      if (typeof done === "function") done();
+      return;
+    }
+    host.innerHTML = "";
+    var wrap = document.createElement("div");
+    wrap.className = "risque-public-aerial-cancel-wrap";
+    var cardWrap = document.createElement("div");
+    cardWrap.className = "risque-public-aerial-cancel-card-wrap";
+    var img = document.createElement("img");
+    img.className = "risque-public-aerial-cancel-card";
+    img.src = "assets/images/Cards/" + cardKey.toUpperCase() + ".webp";
+    img.alt = "";
+    var slash = document.createElement("div");
+    slash.className = "risque-public-aerial-cancel-slash";
+    var ring = document.createElement("div");
+    ring.className = "risque-public-aerial-cancel-ring";
+    cardWrap.appendChild(img);
+    cardWrap.appendChild(ring);
+    cardWrap.appendChild(slash);
+    var text = document.createElement("div");
+    text.className = "risque-public-aerial-cancel-text";
+    text.textContent = "CANCELLED";
+    wrap.appendChild(cardWrap);
+    wrap.appendChild(text);
+    host.appendChild(wrap);
+    setTimeout(function () {
+      if (typeof done === "function") done();
+    }, 3000);
+  }
+
   /**
    * Public TV shelf: large card + recap lines + effect badge in upper pane; current card fades out of the lower shelf.
    * stepIdx === 0: crossfade only. stepIdx > 0: fade upper clear first, then crossfade next card up.
    */
-  function risquePublicShelfRunBookStepAnimation(gs, step, stepIdx) {
+  function risquePublicShelfRunBookStepAnimation(gs, step, stepIdx, onAerialPicked) {
     var overlay = document.getElementById("risque-public-cardplay-recap-overlay");
     var upperInner = document.getElementById("risque-public-cp-shelf-upper-content");
     var proc = _pubBook.proc;
@@ -3554,6 +3767,7 @@
         wrap.appendChild(rep);
       }
       var pk = step.playedCardKey || "";
+      var decisionRendered = false;
       if (pk) {
         var cluster = document.createElement("div");
         cluster.className = "risque-public-book-voice-recap-single";
@@ -3575,7 +3789,11 @@
           cardRow.appendChild(wb);
         }
         cluster.appendChild(cardRow);
+        decisionRendered = risquePublicRenderAerialDecisionButtons(cardRow, proc, step, stepIdx, onAerialPicked);
         wrap.appendChild(cluster);
+      }
+      if (!decisionRendered) {
+        risquePublicRenderAerialDecisionButtons(wrap, proc, step, stepIdx, onAerialPicked);
       }
       upperInner.appendChild(wrap);
       upperInner.style.opacity = "0";
@@ -3719,6 +3937,18 @@
           } catch (eTvAck) {
             /* ignore */
           }
+          try {
+            localStorage.setItem(
+              PUBLIC_CARDPLAY_PROCESSING_STATE_KEY,
+              JSON.stringify({
+                seq: Number(gs.risquePublicCardplayRecapAckRequiredSeq) || 0,
+                state: "done",
+                at: Date.now()
+              })
+            );
+          } catch (eDone) {
+            /* ignore */
+          }
         }
       }
       var shelfFinalizeBook =
@@ -3745,6 +3975,44 @@
       risquePublicShelfOverlayHasShelfPanel() &&
       risquePublicProcRecapAnimation(proc) &&
       risquePublicShelfLowerHasCardSlots();
+    var needsAerialDecision =
+      window.risqueDisplayIsPublic &&
+      risquePublicProcRecapAnimation(proc) &&
+      step &&
+      step.effect === "aerial_attack";
+    function handleAerialChoice(choice) {
+      step.risqueAerialDecision = String(choice || "");
+      if (choice === "countered") {
+        step.voice = "AERIAL ATTACK COUNTERED";
+      }
+      var o0 = document.getElementById("risque-public-aerial-decision-overlay");
+      if (o0 && o0.parentNode) o0.parentNode.removeChild(o0);
+      try {
+        localStorage.removeItem(PUBLIC_AERIAL_DECISION_READY_KEY);
+      } catch (eReadyClr) {
+        /* ignore */
+      }
+      if (choice === "countered") {
+        risquePublicShowAerialCancelledForStep(step, function () {
+          risquePublicBookRunStepMapPart(idx, actingPlayer);
+        });
+      } else {
+        risquePublicBookRunStepMapPart(idx, actingPlayer);
+      }
+    }
+    function readHostAerialDecisionForSeq(seq) {
+      try {
+        var raw = localStorage.getItem(PUBLIC_AERIAL_COUNTER_DECISION_KEY);
+        if (!raw) return null;
+        var d = JSON.parse(raw);
+        if (!d || Number(d.seq) !== Number(seq)) return null;
+        var c = String(d.choice || "");
+        if (c !== "confirmed" && c !== "countered") return null;
+        return c;
+      } catch (eDec) {
+        return null;
+      }
+    }
     if (useShelfRecap) {
       var cv0 = document.getElementById("control-voice");
       if (cv0) cv0.classList.add("ucp-control-voice--public-book-processing");
@@ -3755,15 +4023,102 @@
         vr0.textContent = "";
         vr0.style.display = "none";
       }
-      risquePublicShelfRunBookStepAnimation(gs, step, idx);
+      risquePublicShelfRunBookStepAnimation(gs, step, idx, function (choice) {
+        handleAerialChoice(choice);
+      });
+      if (needsAerialDecision) {
+        setTimeout(function () {
+          var stillThisStep =
+            _pubBook &&
+            _pubBook.proc &&
+            _pubBook.proc.seq === proc.seq &&
+            _pubBook.stepIndex === idx &&
+            _pubBook.phase === "step";
+          if (!stillThisStep) return;
+          var hasDecisionUi = !!document.querySelector(".risque-public-aerial-decision-row");
+          if (hasDecisionUi) return;
+          /* Hard fallback: force-mount in upper pane (or control voice if upper pane missing). */
+          if (!risquePublicMountAerialDecisionPanel(proc, step, idx, handleAerialChoice)) {
+            if (!risquePublicMountAerialDecisionOverlay(proc, step, idx, handleAerialChoice)) {
+              /* Last-resort safety so the game never deadlocks. */
+              handleAerialChoice("confirmed");
+            }
+          }
+        }, 350);
+      }
     } else {
-      risquePublicBookSetVoiceProcessing(gs, step, idx);
+      risquePublicBookSetVoiceProcessing(gs, step, idx, handleAerialChoice);
+      if (needsAerialDecision) {
+        setTimeout(function () {
+          var hasDecisionUi = !!document.querySelector(".risque-public-aerial-decision-row");
+          if (hasDecisionUi) return;
+          if (!risquePublicMountAerialDecisionPanel(proc, step, idx, handleAerialChoice)) {
+            if (!risquePublicMountAerialDecisionOverlay(proc, step, idx, handleAerialChoice)) {
+              handleAerialChoice("confirmed");
+            }
+          }
+        }, 150);
+      }
     }
 
     if (risquePublicProcRecapAnimation(proc)) {
+      if (needsAerialDecision) {
+        try {
+          localStorage.setItem(
+            PUBLIC_CARDPLAY_PROCESSING_STATE_KEY,
+            JSON.stringify({
+              seq: Number(proc.seq) || 0,
+              state: "aerial_decision",
+              at: Date.now()
+            })
+          );
+        } catch (eStepStateAerial) {
+          /* ignore */
+        }
+        try {
+          localStorage.setItem(
+            PUBLIC_AERIAL_DECISION_READY_KEY,
+            JSON.stringify({ seq: Number(proc.seq) || 0, ready: true, at: Date.now() })
+          );
+        } catch (eReadySet) {
+          /* ignore */
+        }
+        var decisionChoice = readHostAerialDecisionForSeq(proc.seq);
+        if (decisionChoice) {
+          handleAerialChoice(decisionChoice);
+          return;
+        }
+        if (_pubBook.stepTimer) {
+          clearTimeout(_pubBook.stepTimer);
+          _pubBook.stepTimer = null;
+        }
+        _pubBook.stepTimer = setTimeout(function waitHostAerialDecision() {
+          _pubBook.stepTimer = null;
+          var choiceNow = readHostAerialDecisionForSeq(proc.seq);
+          if (!choiceNow) {
+            _pubBook.stepTimer = setTimeout(waitHostAerialDecision, 160);
+            return;
+          }
+          handleAerialChoice(choiceNow);
+        }, 160);
+        return;
+      }
       if (_pubBook.stepTimer) {
         clearTimeout(_pubBook.stepTimer);
         _pubBook.stepTimer = null;
+      }
+      try {
+        localStorage.setItem(
+          PUBLIC_CARDPLAY_PROCESSING_STATE_KEY,
+          JSON.stringify({
+            seq: Number(proc.seq) || 0,
+            state: "processing",
+            stepIndex: Number(idx) || 0,
+            at: Date.now()
+          })
+        );
+      } catch (eStepState) {
+        /* ignore */
       }
       _pubBook.focusLabel = null;
       delete gs.risquePublicCardplayHighlightLabels;
