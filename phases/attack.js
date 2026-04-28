@@ -5047,6 +5047,7 @@ function backFromAerialPreview() {
   if (typeof window.risqueMirrorPushGameState === 'function') {
     window.risqueMirrorPushGameState();
   }
+  syncAttackPhaseActionLocks();
 }
 
 function confirmAerialBridgeCommit() {
@@ -5114,6 +5115,7 @@ function startAerialAttack() {
     });
   }
   showPrompt('Select source territory for aerial attack.', [{ label: 'Cancel', onClick: cancelAttack }]);
+  syncAttackPhaseActionLocks();
 }
 
 window.handleTerritoryClick = function(label, owner, troops) {
@@ -5170,6 +5172,7 @@ window.handleTerritoryClick = function(label, owner, troops) {
       );
     }
     showPrompt('Select target territory for aerial attack.', [{ label: 'Cancel', onClick: cancelAttack }]);
+    syncAttackPhaseActionLocks();
     return;
   }
 
@@ -5214,6 +5217,7 @@ window.handleTerritoryClick = function(label, owner, troops) {
         { label: 'Back', onClick: backFromAerialPreview }
       ]
     );
+    syncAttackPhaseActionLocks();
     return;
   }
 
