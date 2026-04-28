@@ -528,25 +528,39 @@
 
   function updateTurnBannerFromState(gs) {
     var el = document.getElementById("attack-player-name");
-    if (!el || !gs || !window.gameUtils) return;
-    var titleEl = document.getElementById("hud-banner-game-title");
-    if (titleEl) {
-      titleEl.textContent = "RISQUE";
+    if (!el || !gs || !window.gameUtils) {
+      var rootEarly = document.getElementById("runtime-hud-root");
+      if (rootEarly) rootEarly.classList.remove("runtime-hud-root--public-cardplay-processing-title");
+      var titleEarly = document.getElementById("hud-banner-game-title");
+      if (titleEarly) titleEarly.textContent = "RISQUE";
+      return;
     }
-    var phase = gs.phase || "";
-    /* Public TV: mirror phase may be "income" while the committed-cardplay recap still runs — banner stays CardPlay until the book finishes. */
+    var titleEl = document.getElementById("hud-banner-game-title");
+    var rootEl = document.getElementById("runtime-hud-root");
+    var bookPh = "idle";
+    var recapSteps = false;
     if (window.risqueDisplayIsPublic) {
-      var bookPh =
+      bookPh =
         typeof window.risquePublicBookSequencePhase === "function"
           ? window.risquePublicBookSequencePhase()
           : "idle";
-      var recapSteps =
+      recapSteps = !!(
         gs.risquePublicBookProcessing &&
         Array.isArray(gs.risquePublicBookProcessing.steps) &&
-        gs.risquePublicBookProcessing.steps.length > 0;
-      if (recapSteps && (bookPh === "summary" || bookPh === "step")) {
-        phase = "cardplay";
-      }
+        gs.risquePublicBookProcessing.steps.length > 0
+      );
+    }
+    var pubCardProc = !!(window.risqueDisplayIsPublic && recapSteps && (bookPh === "summary" || bookPh === "step"));
+    if (rootEl) {
+      rootEl.classList.toggle("runtime-hud-root--public-cardplay-processing-title", pubCardProc);
+    }
+    if (titleEl) {
+      titleEl.textContent = pubCardProc ? "CARD PROCESSING" : "RISQUE";
+    }
+    var phase = gs.phase || "";
+    /* Public TV: mirror phase may be "income" while the committed-cardplay recap still runs — banner stays CardPlay until the book finishes. */
+    if (window.risqueDisplayIsPublic && recapSteps && (bookPh === "summary" || bookPh === "step")) {
+      phase = "cardplay";
     }
     if (phase === "login") {
       el.classList.remove("hud-turn-banner--cardplay");

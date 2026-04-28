@@ -1484,6 +1484,7 @@
           .filter(name => !['wildcard1', 'wildcard2'].includes(name))
           .map(name => ({ value: name, text: name.toUpperCase() }));
         territory = await showPopup('Assign wildcard to a territory:', territoryOptions);
+        if (window.isResetting) return;
         if (!territory || !window.gameUtils.cardNames.includes(territory.toLowerCase())) {
           bookPlayedCard.effects.push({ territory: card, action: 'declined', cardId });
           updateSummaryDisplay();

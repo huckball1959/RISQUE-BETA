@@ -288,7 +288,7 @@
   /** Initial “committed card play” headline (+ card strip) on public TV — dwell before step processing. */
   var BOOK_PUBLIC_SUMMARY_MS = 4000;
   /** Same dwell before step-through when animating host-confirmed recap (runtime cardplay). */
-  var BOOK_PUBLIC_RECAP_SUMMARY_MS = 4000;
+  var BOOK_PUBLIC_RECAP_SUMMARY_MS = 3000;
   /** After showing card + text, pause before territory highlight and troop count animation (public recap). */
   var BOOK_PUBLIC_RECAP_READ_MS = 1200;
   /** Troop count tick animation length on map */
@@ -3503,6 +3503,152 @@
     vt.appendChild(wrap);
   }
 
+  /** Two-pane shelf (#risque-public-cardplay-recap-overlay): lower → upper crossfade; dwell matches user test flow. */
+  var SHELF_CROSSFADE_MS = 500;
+  var SHELF_UPPER_CLEAR_MS = 400;
+
+  function risquePublicShelfOverlayHasShelfPanel() {
+    var o = document.getElementById("risque-public-cardplay-recap-overlay");
+    return !!(o && o.querySelector(".risque-public-cardplay-recap-panel--shelf"));
+  }
+
+  /** Book row, singles cluster, or flat strip — any committed recap thumbnails in the lower shelf. */
+  function risquePublicShelfLowerHasCardSlots() {
+    var o = document.getElementById("risque-public-cardplay-recap-overlay");
+    return !!(o && o.querySelector(".risque-public-cp-shelf-lower .risque-public-cp-shelf-card-slot"));
+  }
+
+  /** Milliseconds after runStep starts before map highlight (recap + shelf): crossfade(s) + read beat. */
+  function risquePublicShelfRecapLeadMs(stepIdx) {
+    if (!risquePublicShelfOverlayHasShelfPanel()) return 0;
+    return stepIdx > 0 ? SHELF_UPPER_CLEAR_MS + SHELF_CROSSFADE_MS : SHELF_CROSSFADE_MS;
+  }
+
+  /**
+   * Public TV shelf: large card + recap lines + effect badge in upper pane; current card fades out of the lower shelf.
+   * stepIdx === 0: crossfade only. stepIdx > 0: fade upper clear first, then crossfade next card up.
+   */
+  function risquePublicShelfRunBookStepAnimation(gs, step, stepIdx) {
+    var overlay = document.getElementById("risque-public-cardplay-recap-overlay");
+    var upperInner = document.getElementById("risque-public-cp-shelf-upper-content");
+    var proc = _pubBook.proc;
+    if (!overlay || !upperInner || !step || !proc) return;
+
+    var slots = overlay.querySelectorAll(".risque-public-cp-shelf-lower .risque-public-cp-shelf-card-slot");
+
+    function fillUpperProcessingUi() {
+      upperInner.style.transition = "opacity " + SHELF_CROSSFADE_MS + "ms ease";
+      upperInner.innerHTML = "";
+      var wrap = document.createElement("div");
+      wrap.className =
+        "risque-public-cp-shelf-upper-processing risque-public-book-voice risque-public-book-voice--recap-narrative";
+      var friendly = risquePublicRecapStepFriendlyLines(proc, step);
+      var tit = document.createElement("div");
+      tit.className = "risque-public-book-voice-title risque-public-cp-shelf-upper-title";
+      tit.textContent = friendly.primary;
+      wrap.appendChild(tit);
+      if (friendly.report) {
+        var rep = document.createElement("div");
+        rep.className = "risque-public-book-voice-recap-detail risque-public-cp-shelf-upper-report";
+        rep.textContent = friendly.report;
+        wrap.appendChild(rep);
+      }
+      var pk = step.playedCardKey || "";
+      if (pk) {
+        var cluster = document.createElement("div");
+        cluster.className = "risque-public-book-voice-recap-single";
+        var cardRow = document.createElement("div");
+        cardRow.className = "risque-public-book-voice-recap-card-row risque-public-cp-shelf-upper-card-row";
+        var bigImg = document.createElement("img");
+        bigImg.className = "risque-public-book-voice-card-img risque-public-book-voice-card-img--active";
+        bigImg.src = "assets/images/Cards/" + String(pk).toUpperCase() + ".webp";
+        bigImg.alt = "";
+        bigImg.setAttribute("loading", "lazy");
+        cardRow.appendChild(bigImg);
+        var badge = risquePublicBookVoiceEffectBadgeForStep(step);
+        if (badge) {
+          risquePublicBookAppendEffectBadgeEl(cardRow, badge);
+        } else if (pk === "wildcard1" || pk === "wildcard2") {
+          var wb = document.createElement("div");
+          wb.className = "risque-public-book-voice-wild-badge";
+          wb.textContent = pk === "wildcard1" ? "WILDCARD 1" : "WILDCARD 2";
+          cardRow.appendChild(wb);
+        }
+        cluster.appendChild(cardRow);
+        wrap.appendChild(cluster);
+      }
+      upperInner.appendChild(wrap);
+      upperInner.style.opacity = "0";
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          upperInner.style.opacity = "1";
+        });
+      });
+    }
+
+    function updateLowerSlotsForStep() {
+      var si;
+      for (si = 0; si < slots.length; si++) {
+        var sl = slots[si];
+        var img = sl.querySelector("img");
+        if (!img) continue;
+        img.style.transition = "opacity " + SHELF_CROSSFADE_MS + "ms ease";
+        sl.classList.remove("risque-public-cp-shelf-card-slot--done");
+        if (si < stepIdx) {
+          sl.classList.add("risque-public-cp-shelf-card-slot--done");
+          img.style.opacity = "0.35";
+        } else if (si === stepIdx) {
+          img.style.opacity = "0";
+        } else {
+          img.style.opacity = "1";
+        }
+      }
+    }
+
+    if (stepIdx > 0) {
+      upperInner.style.transition = "opacity " + SHELF_UPPER_CLEAR_MS + "ms ease";
+      upperInner.style.opacity = "0";
+      setTimeout(function () {
+        upperInner.innerHTML = "";
+        updateLowerSlotsForStep();
+        fillUpperProcessingUi();
+      }, SHELF_UPPER_CLEAR_MS);
+    } else {
+      updateLowerSlotsForStep();
+      fillUpperProcessingUi();
+    }
+  }
+
+  /**
+   * After the last recap step: fade the upper processing UI out and restore every card in the lower shelf
+   * to the dimmed “processed” state (matches earlier steps). Then caller sets phase done + recap ack.
+   */
+  function risquePublicShelfFinalizeBookRecap(done) {
+    var overlay = document.getElementById("risque-public-cardplay-recap-overlay");
+    var upperInner = document.getElementById("risque-public-cp-shelf-upper-content");
+    var slots = overlay ? overlay.querySelectorAll(".risque-public-cp-shelf-lower .risque-public-cp-shelf-card-slot") : [];
+    if (!upperInner || !slots.length) {
+      if (typeof done === "function") done();
+      return;
+    }
+    upperInner.style.transition = "opacity " + SHELF_CROSSFADE_MS + "ms ease";
+    upperInner.style.opacity = "0";
+    var si;
+    for (si = 0; si < slots.length; si++) {
+      var sl = slots[si];
+      var img = sl && sl.querySelector("img");
+      if (!img) continue;
+      img.style.transition = "opacity " + SHELF_CROSSFADE_MS + "ms ease";
+      sl.classList.add("risque-public-cp-shelf-card-slot--done");
+      img.style.opacity = "0.35";
+    }
+    setTimeout(function () {
+      upperInner.innerHTML = "";
+      upperInner.style.opacity = "1";
+      if (typeof done === "function") done();
+    }, SHELF_CROSSFADE_MS);
+  }
+
   function risquePublicBookAnimateTroops(label, from, to, ms, done) {
     if (from === to) {
       if (typeof done === "function") done();
@@ -3535,50 +3681,84 @@
     var gs = window.gameState;
     if (!window.gameUtils || !gs) return;
     if (!proc || !proc.steps || idx >= proc.steps.length) {
-      _pubBook.phase = "done";
-      _pubBook.focusLabel = null;
-      _pubBook.countAnimating = false;
-      _pubBook.skipTerritoryRedraw = false;
-      if (_pubBook.seq != null) {
-        try {
-          if (typeof sessionStorage !== "undefined") {
-            sessionStorage.setItem(RISQUE_SESSION_RECAP_SEQ_KEY, String(_pubBook.seq));
+      function risquePublicBookRunStepDoneFinale() {
+        _pubBook.phase = "done";
+        _pubBook.focusLabel = null;
+        _pubBook.countAnimating = false;
+        _pubBook.skipTerritoryRedraw = false;
+        if (_pubBook.seq != null) {
+          try {
+            if (typeof sessionStorage !== "undefined") {
+              sessionStorage.setItem(RISQUE_SESSION_RECAP_SEQ_KEY, String(_pubBook.seq));
+            }
+          } catch (eSeq) {
+            /* ignore */
           }
-        } catch (eSeq) {
-          /* ignore */
+        }
+        _pubBook.displayTroopMap = null;
+        delete gs.risquePublicCardplayHighlightLabels;
+        delete gs.risquePublicCardplayHighlightMode;
+        window.gameUtils.renderTerritories(null, gs);
+        risquePublicApplyVoiceAndLogMirror(gs);
+        risquePublicSyncCardplayStrip(gs);
+        risquePublicFlushDeferredIncomeTransition();
+        if (
+          window.risqueDisplayIsPublic &&
+          gs &&
+          gs.risquePublicCardplayRecapAckRequiredSeq != null &&
+          String(gs.phase || "") === "cardplay"
+        ) {
+          try {
+            localStorage.setItem(
+              "risquePublicCardplayRecapAck",
+              JSON.stringify({
+                seq: Number(gs.risquePublicCardplayRecapAckRequiredSeq),
+                at: Date.now()
+              })
+            );
+          } catch (eTvAck) {
+            /* ignore */
+          }
         }
       }
-      _pubBook.displayTroopMap = null;
-      delete gs.risquePublicCardplayHighlightLabels;
-      delete gs.risquePublicCardplayHighlightMode;
-      window.gameUtils.renderTerritories(null, gs);
-      risquePublicApplyVoiceAndLogMirror(gs);
-      risquePublicSyncCardplayStrip(gs);
-      risquePublicFlushDeferredIncomeTransition();
-      if (
+      var shelfFinalizeBook =
+        proc &&
+        proc.steps &&
+        proc.steps.length > 0 &&
+        idx >= proc.steps.length &&
         window.risqueDisplayIsPublic &&
-        gs &&
-        gs.risquePublicCardplayRecapAckRequiredSeq != null &&
-        String(gs.phase || "") === "cardplay"
-      ) {
-        try {
-          localStorage.setItem(
-            "risquePublicCardplayRecapAck",
-            JSON.stringify({
-              seq: Number(gs.risquePublicCardplayRecapAckRequiredSeq),
-              at: Date.now()
-            })
-          );
-        } catch (eTvAck) {
-          /* ignore */
-        }
+        risquePublicShelfOverlayHasShelfPanel() &&
+        risquePublicProcRecapAnimation(proc) &&
+        risquePublicShelfLowerHasCardSlots();
+      if (shelfFinalizeBook) {
+        risquePublicShelfFinalizeBookRecap(risquePublicBookRunStepDoneFinale);
+        return;
       }
+      risquePublicBookRunStepDoneFinale();
       return;
     }
     var step = proc.steps[idx];
     var actingPlayer = String((proc.playerName || gs.currentPlayer || "") + "");
     _pubBook.stepIndex = idx;
-    risquePublicBookSetVoiceProcessing(gs, step, idx);
+    var useShelfRecap =
+      window.risqueDisplayIsPublic &&
+      risquePublicShelfOverlayHasShelfPanel() &&
+      risquePublicProcRecapAnimation(proc) &&
+      risquePublicShelfLowerHasCardSlots();
+    if (useShelfRecap) {
+      var cv0 = document.getElementById("control-voice");
+      if (cv0) cv0.classList.add("ucp-control-voice--public-book-processing");
+      var vt0 = document.getElementById("control-voice-text");
+      if (vt0) vt0.innerHTML = "";
+      var vr0 = document.getElementById("control-voice-report");
+      if (vr0) {
+        vr0.textContent = "";
+        vr0.style.display = "none";
+      }
+      risquePublicShelfRunBookStepAnimation(gs, step, idx);
+    } else {
+      risquePublicBookSetVoiceProcessing(gs, step, idx);
+    }
 
     if (risquePublicProcRecapAnimation(proc)) {
       if (_pubBook.stepTimer) {
@@ -3593,10 +3773,11 @@
       if (step && !step.mapTerritory && !step.animateTroops) {
         readMs = BOOK_PUBLIC_RECAP_VOICE_READ_MS;
       }
+      var shelfLead = useShelfRecap ? risquePublicShelfRecapLeadMs(idx) : 0;
       _pubBook.stepTimer = setTimeout(function () {
         _pubBook.stepTimer = null;
         risquePublicBookRunStepMapPart(idx, actingPlayer);
-      }, readMs);
+      }, readMs + shelfLead);
       return;
     }
 
@@ -3718,7 +3899,7 @@
   }
 
   /** Bump when public recap DOM/logic changes so TV rebuilds after hard refresh (seq alone is not enough). */
-  var RISQUE_PUBLIC_CARDPLAY_RECAP_RENDER_VER = "10";
+  var RISQUE_PUBLIC_CARDPLAY_RECAP_RENDER_VER = "13";
 
   /** Public recap: troop removal shows “-2” (minus + number) in red, not the word “negative”. */
   function risquePublicRecapCaptionDeltaText(Lc) {
@@ -3800,15 +3981,6 @@
       removeRecapOverlay();
       return;
     }
-    /* Step-by-step map + voice animation uses risquePublicBookProcessing; skip static recap panel. */
-    if (
-      gs.risquePublicBookProcessing &&
-      Array.isArray(gs.risquePublicBookProcessing.steps) &&
-      gs.risquePublicBookProcessing.steps.length > 0
-    ) {
-      removeRecapOverlay();
-      return;
-    }
     var seq = Number(recap.seq) || 0;
     var existing = document.getElementById(overlayId);
     if (
@@ -3827,32 +3999,26 @@
     overlay.setAttribute("data-recap-render-v", RISQUE_PUBLIC_CARDPLAY_RECAP_RENDER_VER);
     overlay.setAttribute("role", "dialog");
     var panel = document.createElement("div");
-    panel.className = "risque-public-cardplay-recap-panel";
-    var title = document.createElement("div");
-    title.className = "risque-public-cardplay-recap-title";
-    title.textContent =
-      "CARDPLAY — " +
-      (recap.playerName != null ? String(recap.playerName) : gs.currentPlayer || "PLAYER").toUpperCase();
-    panel.appendChild(title);
-    var ul = document.createElement("ul");
-    ul.className = "risque-public-cardplay-recap-lines";
-    var li;
-    for (li = 0; li < recap.lines.length; li++) {
-      var item = document.createElement("li");
-      var tnorm = risquePublicNormalizeRecapBulletText(recap.lines[li]);
-      item.textContent = tnorm;
-      var k = recap.publicLineKinds && recap.publicLineKinds[li];
-      if (k === "book") {
-        item.classList.add("risque-public-cardplay-recap-line--book");
-      } else if (k === "wildcard" || tnorm === "WILDCARD") {
-        item.classList.add("risque-public-cardplay-recap-line--wildcard");
-      }
-      ul.appendChild(item);
-    }
-    panel.appendChild(ul);
+    panel.className = "risque-public-cardplay-recap-panel risque-public-cardplay-recap-panel--shelf";
+    var shelfUpper = document.createElement("div");
+    shelfUpper.className = "risque-public-cp-shelf-upper";
+    shelfUpper.setAttribute("role", "region");
+    shelfUpper.setAttribute("aria-label", "Display area");
+    var shelfUpperContent = document.createElement("div");
+    shelfUpperContent.id = "risque-public-cp-shelf-upper-content";
+    shelfUpperContent.className = "risque-public-cp-shelf-upper-content";
+    shelfUpperContent.setAttribute("aria-live", "polite");
+    shelfUpper.appendChild(shelfUpperContent);
+    var shelfLower = document.createElement("div");
+    shelfLower.className = "risque-public-cp-shelf-lower";
+    shelfLower.setAttribute("role", "region");
+    shelfLower.setAttribute("aria-label", "Cards played this turn");
+    panel.appendChild(shelfUpper);
+    panel.appendChild(shelfLower);
     var recapPopIdx = 0;
-    function recapAppendCardImg(parent, rawId, label) {
-      label = label || {};
+    /** Public shelf (design pass): image only — no effect captions, wild side badges, or step labels. */
+    function shelfLowerAppendCardImageOnly(parent, rawId) {
+      if (!parent) return;
       var sid =
         typeof risquePublicSanitizeCardImageId === "function"
           ? risquePublicSanitizeCardImageId(rawId)
@@ -3861,53 +4027,17 @@
             .replace(/[^a-z0-9_]/g, "");
       if (!sid) return;
       var img = document.createElement("img");
-      img.className =
-        "risque-public-cardplay-recap-card-img risque-public-cardplay-recap-card-img--stagger";
-      img.style.animationDelay = recapPopIdx * 45 + "ms";
-      recapPopIdx += 1;
+      img.className = "risque-public-cp-shelf-card";
       img.src = "assets/images/Cards/" + String(sid || "").toUpperCase() + ".webp";
       img.alt = "";
       img.setAttribute("loading", "lazy");
-      if (label.acquireStrokeColor) {
-        img.style.boxShadow = "0 0 0 4px " + label.acquireStrokeColor;
-      }
-      if (sid === "wildcard1" || sid === "wildcard2") {
-        img.classList.add("risque-public-cardplay-recap-card-img--wildcard");
-      } else if (label.isAerial) {
-        img.classList.add("risque-public-cardplay-recap-card-img--aerial");
-      }
-      var sideTxt =
-        label.wildSideLabel != null && String(label.wildSideLabel).trim() !== ""
-          ? String(label.wildSideLabel).trim()
-          : "";
-      var isWildSid = sid === "wildcard1" || sid === "wildcard2";
-      if (isWildSid && sideTxt) {
-        var sideRow = document.createElement("div");
-        sideRow.className = "risque-public-cardplay-recap-wild-side-row";
-        sideRow.appendChild(img);
-        var sideBadge = document.createElement("div");
-        sideBadge.className =
-          "risque-public-cardplay-recap-wild-side-badge" +
-          (String(sideTxt).toUpperCase().replace(/\s+/g, " ") === "AERIAL ATTACK"
-            ? " risque-public-cardplay-recap-wild-side-badge--aerial"
-            : " risque-public-cardplay-recap-wild-side-badge--territory");
-        sideBadge.textContent = sideTxt;
-        sideRow.appendChild(sideBadge);
-        parent.appendChild(sideRow);
-      } else {
-        parent.appendChild(img);
-        if (isWildSid) {
-          var wlab = document.createElement("div");
-          wlab.className = "risque-public-cardplay-recap-wild-label";
-          wlab.textContent = sid === "wildcard1" ? "WILDCARD 1" : "WILDCARD 2";
-          parent.appendChild(wlab);
-        }
-      }
+      parent.appendChild(img);
+      recapPopIdx += 1;
     }
     var groups = Array.isArray(recap.cardGroups) && recap.cardGroups.length ? recap.cardGroups : null;
     if (groups) {
       var row = document.createElement("div");
-      row.className = "risque-public-cardplay-recap-cards";
+      row.className = "risque-public-cardplay-recap-cards risque-public-cp-shelf-lower__cards";
       var gi;
       for (gi = 0; gi < groups.length; gi++) {
         var g = groups[gi];
@@ -3915,8 +4045,8 @@
         var wrap = document.createElement("div");
         wrap.className =
           g.kind === "book"
-            ? "risque-public-cardplay-recap-book-group"
-            : "risque-public-cardplay-recap-single-cluster";
+            ? "risque-public-cardplay-recap-book-group risque-public-cp-shelf-lower__book"
+            : "risque-public-cardplay-recap-single-cluster risque-public-cp-shelf-lower__singles";
         var cardHost = wrap;
         if (g.kind === "book") {
           var bookHead = document.createElement("div");
@@ -3930,61 +4060,26 @@
         var zi;
         for (zi = 0; zi < g.ids.length; zi++) {
           var col = document.createElement("div");
-          col.className = "risque-public-cardplay-recap-card-col";
-          var L = risquePublicNormalizeRecapLabel(g.labels && g.labels[zi] ? g.labels[zi] : {});
-          recapAppendCardImg(col, g.ids[zi], L);
-          if (L.wildSideLabel) {
-            col.classList.add("risque-public-cardplay-recap-card-col--wild-with-side");
-          }
-          if (!L.skipCaption) {
-            var Lc = L;
-            var cap = document.createElement("div");
-            cap.className = "risque-public-cardplay-recap-caption";
-            if (Lc.combined) {
-              var one = document.createElement("div");
-              one.className = "risque-public-cardplay-recap-cap-combined";
-              if (Lc.isAerial) {
-                one.classList.add("risque-public-cardplay-recap-cap-combined--aerial");
-              }
-              if (Lc.tone === "pos") one.classList.add("risque-public-cardplay-recap-cap-value--pos");
-              else if (Lc.tone === "neg") one.classList.add("risque-public-cardplay-recap-cap-value--neg");
-              else if (Lc.tone === "acq") one.classList.add("risque-public-cardplay-recap-cap-value--acq");
-              else one.classList.add("risque-public-cardplay-recap-cap-value--muted");
-              one.textContent = risquePublicRecapCaptionDeltaText(Lc);
-              cap.appendChild(one);
-            } else {
-              if (Lc.title) {
-                var tt = document.createElement("div");
-                tt.className = "risque-public-cardplay-recap-cap-title";
-                tt.textContent = Lc.title;
-                cap.appendChild(tt);
-              }
-              var vv = document.createElement("div");
-              vv.className = "risque-public-cardplay-recap-cap-value";
-              if (Lc.tone === "pos") vv.classList.add("risque-public-cardplay-recap-cap-value--pos");
-              else if (Lc.tone === "neg") vv.classList.add("risque-public-cardplay-recap-cap-value--neg");
-              else if (Lc.tone === "acq") vv.classList.add("risque-public-cardplay-recap-cap-value--acq");
-              else vv.classList.add("risque-public-cardplay-recap-cap-value--muted");
-              vv.textContent = risquePublicRecapCaptionDeltaText(Lc);
-              cap.appendChild(vv);
-            }
-            col.appendChild(cap);
-          }
+          col.className = "risque-public-cp-shelf-card-slot";
+          shelfLowerAppendCardImageOnly(col, g.ids[zi]);
           cardHost.appendChild(col);
         }
         if (wrap.childNodes.length) row.appendChild(wrap);
       }
-      if (row.childNodes.length) panel.appendChild(row);
+      if (row.childNodes.length) shelfLower.appendChild(row);
     } else {
       var rawIds = Array.isArray(recap.cardIds) ? recap.cardIds : [];
       if (rawIds.length > 0) {
         var rowFlat = document.createElement("div");
-        rowFlat.className = "risque-public-cardplay-recap-cards";
+        rowFlat.className = "risque-public-cardplay-recap-cards risque-public-cp-shelf-lower__cards";
         var ii;
         for (ii = 0; ii < rawIds.length; ii++) {
-          recapAppendCardImg(rowFlat, rawIds[ii]);
+          var slot0 = document.createElement("div");
+          slot0.className = "risque-public-cp-shelf-card-slot";
+          shelfLowerAppendCardImageOnly(slot0, rawIds[ii]);
+          rowFlat.appendChild(slot0);
         }
-        if (rowFlat.childNodes.length) panel.appendChild(rowFlat);
+        if (rowFlat.childNodes.length) shelfLower.appendChild(rowFlat);
       }
     }
     overlay.appendChild(panel);
