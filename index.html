@@ -40,27 +40,6 @@
     }
     .hint { margin: 14px 0 0; font-size: 13px; color: #94a3b8; }
     .tools-divider { margin: 18px 0 10px; padding-top: 14px; border-top: 1px solid #374151; font-size: 13px; color: #94a3b8; }
-    .quick-launch {
-      width: min(560px, 94vw);
-      background: #111827;
-      border: 1px solid #374151;
-      border-radius: 12px;
-      padding: 18px;
-      box-sizing: border-box;
-      color: #e5e7eb;
-      text-align: center;
-    }
-    .quick-launch h2 { margin: 0 0 10px; font-size: 1.2rem; }
-    .quick-launch p { margin: 0 0 12px; color: #94a3b8; }
-    .quick-launch button {
-      width: min(420px, 92%);
-      min-height: 52px;
-      font-size: 16px;
-      font-weight: 800;
-      background: #22c55e;
-      color: #04130a;
-      border: 2px solid #15803d;
-    }
   </style>
   <script src="js/risque-external-urls.js"></script>
 </head>
@@ -80,12 +59,6 @@
       <a href="docs/manual.html">Manual</a> · <a href="docs/help.html">Help</a> ·
       <a href="game.html">Runtime shell</a> · <a href="index.html">Launcher (redirect)</a>
     </p>
-  </main>
-
-  <main id="quick-launch" class="quick-launch" hidden>
-    <h2>Start Host + Public</h2>
-    <p>Host opens in a normal browser tab. Public opens in a second window (pop-up). If Chrome blocks the TV window, allow pop-ups for this page.</p>
-    <button type="button" id="btnStartDual">OPEN HOST + PUBLIC</button>
   </main>
 
   <noscript>
@@ -210,21 +183,11 @@
       if (ns) ns.href = gameLoginUrl();
 
       if (!/\bmenu=1\b/.test(location.search)) {
-        if (tryOpenDualWindows()) {
-          return;
-        }
-        var quick = document.getElementById("quick-launch");
-        if (quick) quick.hidden = false;
-        var btnDual = document.getElementById("btnStartDual");
-        if (btnDual) {
-          btnDual.onclick = function () {
-            if (!tryOpenDualWindows()) {
-              alert(
-                "Chrome blocked one or both pop-up windows.\n\n" +
-                  "Allow pop-ups for this folder/site, then click OPEN HOST + PUBLIC again."
-              );
-            }
-          };
+        /* Same tab as "Host login only" — no auto pop-up (often blocked). Open public TV yourself if needed. */
+        try {
+          window.location.replace(gameLoginUrl());
+        } catch (eLoc) {
+          window.location.href = gameLoginUrl();
         }
         return;
       }
@@ -234,7 +197,9 @@
 
       document.getElementById("btnGameLogin").onclick = function () {
         if (!tryOpenDualWindows()) {
-          alert("Could not open both windows. Allow pop-ups and try again, or use OPEN HOST + PUBLIC.");
+          alert(
+            "Could not open both windows. Allow pop-ups and try again, or use Host login only and open the public view in another tab."
+          );
         }
       };
       document.getElementById("btnRuntime").onclick = function () {

@@ -535,6 +535,13 @@ function reinforceProceedAfterReinforce() {
     delete gs.risqueTransferPulse;
   }
   reinforceSaveState();
+  if (typeof window.risqueMirrorPushGameState === "function") {
+    try {
+      window.risqueMirrorPushGameState();
+    } catch (eMirror) {
+      /* ignore */
+    }
+  }
   if (window.risqueNavigateWithFade) {
     window.risqueNavigateWithFade('game.html?phase=receivecard');
   } else {

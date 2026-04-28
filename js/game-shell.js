@@ -4361,10 +4361,8 @@
         window.risqueRuntimeHud.syncPosition();
       });
     }
-    if (
-      window.risqueDisplayIsPublic &&
-      (String(gs.phase || "") === "attack" || String(gs.phase || "") === "reinforce")
-    ) {
+    /* Map phases after reinforce (e.g. receivecard): must run clear when aerial is gone, not only attack/reinforce. */
+    if (window.risqueDisplayIsPublic) {
       requestAnimationFrame(function () {
         requestAnimationFrame(function () {
           try {
@@ -5730,36 +5728,45 @@
             /* ignore */
           }
         }
-        if (String(state.phase || "") === "attack" || String(state.phase || "") === "reinforce") {
-          (function () {
-            var ap =
-              state.risqueAerialLinkPending &&
-              typeof state.risqueAerialLinkPending === "object" &&
-              state.risqueAerialLinkPending.source &&
-              state.risqueAerialLinkPending.target
-                ? state.risqueAerialLinkPending
-                : null;
-            var ad =
-              state.aerialAttack &&
-              typeof state.aerialAttack === "object" &&
-              state.aerialAttack.source &&
-              state.aerialAttack.target
-                ? state.aerialAttack
-                : null;
-            var al = ap || ad;
-            if (al && typeof window.risqueRedrawAerialBridgeOverlay === "function") {
+        (function () {
+          var ap =
+            state.risqueAerialLinkPending &&
+            typeof state.risqueAerialLinkPending === "object" &&
+            state.risqueAerialLinkPending.source &&
+            state.risqueAerialLinkPending.target
+              ? state.risqueAerialLinkPending
+              : null;
+          var ad =
+            state &&
+            state.aerialAttack &&
+            typeof state.aerialAttack === "object" &&
+            state.aerialAttack.source &&
+            state.aerialAttack.target
+              ? state.aerialAttack
+              : null;
+          var al = ap || ad;
+          if (al && typeof window.risqueRedrawAerialBridgeOverlay === "function") {
+            requestAnimationFrame(function () {
               requestAnimationFrame(function () {
-                requestAnimationFrame(function () {
-                  try {
-                    window.risqueRedrawAerialBridgeOverlay();
-                  } catch (eBr) {
-                    /* ignore */
-                  }
-                });
+                try {
+                  window.risqueRedrawAerialBridgeOverlay();
+                } catch (eBr) {
+                  /* ignore */
+                }
               });
-            }
-          })();
-        }
+            });
+          } else if (!al && typeof window.risqueClearAerialBridgeOverlay === "function") {
+            requestAnimationFrame(function () {
+              requestAnimationFrame(function () {
+                try {
+                  window.risqueClearAerialBridgeOverlay();
+                } catch (eClrH) {
+                  /* ignore */
+                }
+              });
+            });
+          }
+        })();
         if (state && state.risqueGameWinImmediate && state.winner) {
           if (typeof window.risqueMountImmediateGameWinOverlay === "function") {
             try {
