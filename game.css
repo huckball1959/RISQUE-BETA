@@ -515,10 +515,13 @@ body.risque-view-host[data-risque-phase="attack"] .hud-banner-player-phase-line 
 /*
  * Public TV — committed cardplay recap: replace RISQUE with CARD PROCESSING; center on canvas at 1500px
  * (1080 map + 420 = half of 840px control column). HUD column is left:1125px width:742px → 1500−1125 = 375px.
+ * ~Half the RISQUE size so the shelf panes are not pushed past the 1080px canvas.
  */
 html.risque-view-public .runtime-hud-root.runtime-hud-root--public-cardplay-processing-title .hud-title-stack {
   position: relative;
-  min-height: clamp(44px, 6.5vw, 74px);
+  min-height: clamp(22px, 3.25vw, 38px);
+  padding-top: 2px;
+  margin-bottom: 0;
 }
 html.risque-view-public .runtime-hud-root.runtime-hud-root--public-cardplay-processing-title #hud-banner-game-title {
   position: absolute;
@@ -529,6 +532,9 @@ html.risque-view-public .runtime-hud-root.runtime-hud-root--public-cardplay-proc
   max-width: min(720px, 96vw);
   white-space: nowrap;
   text-align: center;
+  font-size: clamp(20.8px, 3vw, 35.2px);
+  letter-spacing: 0.08em;
+  line-height: 1.05;
 }
 
 .risque-view-public .hud-stats-panel {
@@ -7046,50 +7052,79 @@ html.risque-view-public .runtime-hud-root:not(.runtime-hud-root--login) #hud-ban
   background: #0a0a0a;
 }
 
-/* Wireframe (840×1080 spec): 25px inset on each side before the two neon windows. */
+/* Shelf: flex-fill inside #hud-main-panel; 25px inset from control panel comes from parent padding.
+ * No fill here — #hud-main-panel is already black; avoids an extra “plate” behind the two windows. */
 .risque-public-cardplay-recap-overlay--in-panel:has(.risque-public-cardplay-recap-panel--shelf) {
   display: flex;
   flex-direction: column;
   align-items: stretch;
   justify-content: stretch;
-  min-height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
   height: 100%;
-  padding: 25px;
+  width: 100%;
+  padding: 0;
   box-sizing: border-box;
-  background: #000000;
+  position: relative;
+  left: auto;
+  right: auto;
+  top: auto;
+  bottom: auto;
+  background: transparent;
 }
 
-/*
- * #risque-public-cardplay-recap-overlay is position:absolute;inset:0 and does NOT add height to
- * #hud-main-panel. The panel’s height was only the in-flow #risque-main-panel-body (voice, log) —
- * often a few hundred px — so 50/50 “windows” looked squashed. Give the main panel a design
- * min-height (840×1080 spec region, inset handled inside the overlay) so the two-pane flex has
- * a tall enough containing block.
- */
+/* Public recap shelf: HUD column uses flex + bottom:0 inside 1080px #ui-overlay; #hud-main-panel gets
+ * the remaining height below the title, 25px padding, and the overlay flex-fills (body stack hidden). */
+/* Pin HUD column bottom to canvas (1080px #ui-overlay) so recap never extends below the board. */
 .risque-view-public .runtime-hud-root--public-cardplay-recap {
-  min-height: min(100dvh, 100vh);
+  bottom: 0;
+  min-height: 0;
+  max-height: none;
   display: flex;
   flex-direction: column;
   align-items: stretch;
   box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* Less air under the title before the first shelf window */
+.risque-view-public .runtime-hud-root--public-cardplay-recap .hud-title-stack {
+  padding-top: 2px;
+  padding-bottom: 0;
+  margin-bottom: 0;
 }
 
 .risque-view-public .runtime-hud-root--public-cardplay-recap #hud-main-panel {
   flex: 1 1 auto;
-  min-height: min(1080px, calc(100dvh - 4.5rem));
+  min-height: 0;
   min-width: 0;
-  max-height: min(1080px, calc(100dvh - 4.5rem));
+  max-height: none;
   position: relative;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  /* #hud-main-panel reuses .attack-control-panel: drop its green chrome so only the two shelf boxes read as frames. */
+  /* 25px from control panel edges; shelf fills the inner box. */
+  padding: 25px !important;
+  box-sizing: border-box;
+  /* #hud-main-panel reuses .attack-control-panel: drop its green chrome + opaque fill — no “plate” behind the windows. */
   border: none !important;
-  background: #000000 !important;
+  background: transparent !important;
   box-shadow: none !important;
-  padding: 0 !important;
   border-radius: 0 !important;
   gap: 0;
+}
+
+/* Beat .attack-control-panel { background:#111 } and overlay --in-panel #0a0a0a — column black comes from #ui-overlay. */
+.risque-view-public .runtime-hud-root--public-cardplay-recap #hud-main-panel.attack-control-panel {
+  background: transparent !important;
+}
+.risque-view-public .runtime-hud-root--public-cardplay-recap .risque-public-cardplay-recap-overlay--in-panel {
+  background: transparent !important;
+}
+
+/* Voice/log stack sits under the recap overlay — collapse it so flex height goes to the shelf. */
+.risque-view-public .runtime-hud-root--public-cardplay-recap #risque-main-panel-body {
+  display: none !important;
 }
 
 /* During recap, strip non–card-play chrome on public TV (stats, phase slot, turn line under title) */
@@ -7123,9 +7158,10 @@ html.risque-view-public .runtime-hud-root:not(.runtime-hud-root--login) #hud-ban
   padding: 16px 14px 20px;
 }
 
-/* Design ref: 840×1080 canvas, two equal stacked panes, thick #00ff00 border, black fill, gutter between. */
+/* Design ref: 840×1080 canvas, two equal stacked panes, neon frames only — no extra black card behind them. */
 .risque-public-cardplay-recap-overlay
   .risque-public-cardplay-recap-panel.risque-public-cardplay-recap-panel--shelf {
+  --risque-cp-shelf-pane-gap: 12px;
   width: 100%;
   max-width: min(840px, 100%);
   max-height: min(1080px, 100%);
@@ -7135,10 +7171,10 @@ html.risque-view-public .runtime-hud-root:not(.runtime-hud-root--login) #hud-ban
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: min(4vh, 24px);
+  gap: var(--risque-cp-shelf-pane-gap);
   padding: 0;
   margin: 0 auto;
-  background: #000000;
+  background: transparent;
   border: none;
   border-radius: 0;
   box-shadow: none;
@@ -7172,11 +7208,18 @@ html.risque-view-public .runtime-hud-root:not(.runtime-hud-root--login) #hud-ban
   flex: 1 1 0;
   min-height: 0;
   box-sizing: border-box;
-  background: #000000;
+  /* Interior reads black via control panel; avoids stacking another opaque layer. */
+  background: transparent;
   /* Thin matrix green — matches the removed outer chrome weight; not the old thick frame. */
   border: 1px solid #00ff00;
   border-radius: 0;
   box-shadow: none;
+}
+
+/* ~10px shorter per pane vs 50/50 split — frees vertical room under a tighter title row. */
+.risque-public-cardplay-recap-panel.risque-public-cardplay-recap-panel--shelf .risque-public-cp-shelf-upper,
+.risque-public-cardplay-recap-panel.risque-public-cardplay-recap-panel--shelf .risque-public-cp-shelf-lower {
+  max-height: calc((100% - var(--risque-cp-shelf-pane-gap, 12px)) / 2 - 10px);
 }
 
 /* Upper pane: CARD PROCESSING — large single card + recap lines (mirrors control-voice recap narrative). */
