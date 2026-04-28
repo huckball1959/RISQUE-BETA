@@ -5283,10 +5283,15 @@ html.risque-view-public body[data-risque-show-public-dice="1"] #hud-attack-chrom
 }
 
 /*
- * Host marks attack chrome non-interactive with .hud-chrome-disabled (opacity 0.45) for TV;
- * that dimmed the dice readout. Public has no click targets here (buttons hidden in CSS) — show full brightness like the host.
+ * Host marks attack chrome non-interactive with .hud-chrome-disabled for TV — dice row uses opacity 0.45
+ * on .attack-dice-columns (see base rules). Setting opacity on #hud-attack-chrome does NOT undo that on
+ * descendants; public TV must force the dice columns back to full brightness.
  */
 .risque-view-public #hud-attack-chrome.hud-chrome-disabled {
+  opacity: 1 !important;
+}
+
+html.risque-view-public .hud-attack-chrome.hud-chrome-disabled .attack-dice-columns {
   opacity: 1 !important;
 }
 
