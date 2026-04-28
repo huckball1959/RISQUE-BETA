@@ -7255,40 +7255,6 @@ html.risque-view-public .runtime-hud-root:not(.runtime-hud-root--login) #hud-ban
   box-sizing: border-box;
 }
 
-.risque-public-aerial-decision-row {
-  margin-top: 6px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: flex-start;
-  align-items: center;
-  width: 100%;
-}
-
-.risque-public-aerial-decision-portal {
-  width: 100%;
-  margin-top: 6px;
-  display: flex;
-  justify-content: center;
-}
-
-.risque-public-aerial-decision-overlay {
-  position: fixed;
-  left: 50%;
-  bottom: 9%;
-  transform: translateX(-50%);
-  z-index: 2147483646;
-  pointer-events: none;
-}
-
-.risque-public-aerial-decision-overlay-panel {
-  background: rgba(0, 0, 0, 0.92);
-  border: 1px solid #00ff00;
-  border-radius: 6px;
-  padding: 10px 12px;
-  pointer-events: auto;
-}
-
 .cardplay-host-aerial-decision {
   margin: 10px 0 12px;
   padding: 10px;
@@ -7380,58 +7346,6 @@ html.risque-view-public .runtime-hud-root:not(.runtime-hud-root--login) #hud-ban
   letter-spacing: 0.06em;
 }
 
-.risque-public-aerial-decision-select {
-  border: 1px solid #00ff00;
-  border-radius: 4px;
-  background: #000;
-  color: #00ff00;
-  font-family: Arial, sans-serif;
-  font-size: clamp(13px, 1.2vw, 18px);
-  font-weight: 700;
-  padding: 8px 10px;
-  min-width: 180px;
-  display: none;
-}
-
-.risque-public-aerial-decision-btn {
-  border: 1px solid #00ff00;
-  border-radius: 4px;
-  background: #000;
-  color: #00ff00;
-  font-family: Arial, sans-serif;
-  font-size: clamp(14px, 1.4vw, 20px);
-  font-weight: 700;
-  padding: 8px 14px;
-  cursor: pointer;
-}
-
-.risque-public-aerial-decision-btn:hover:not(:disabled) {
-  background: #062b06;
-}
-
-.risque-public-aerial-decision-btn--counter {
-  border-color: #ff4d4d;
-  color: #ff9999;
-}
-
-.risque-public-aerial-decision-btn--counter:hover:not(:disabled) {
-  background: #2b0606;
-}
-
-.risque-public-aerial-decision-btn:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
-
-.risque-public-aerial-decision-msg {
-  display: none;
-  width: 100%;
-  text-align: left;
-  color: #ff9f9f;
-  font-family: Arial, sans-serif;
-  font-size: clamp(12px, 1.1vw, 16px);
-  font-weight: 700;
-}
 
 .risque-public-cp-shelf-lower {
   display: flex;

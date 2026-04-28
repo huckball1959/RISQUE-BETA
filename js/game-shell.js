@@ -3440,9 +3440,6 @@
           if (recapBadge) {
             risquePublicBookAppendEffectBadgeEl(cardRow, recapBadge);
           }
-          if (step && step.effect === "aerial_attack") {
-            risquePublicRenderAerialDecisionButtons(cardRow, proc, step, stepIdx, onAerialPicked);
-          }
           cluster.appendChild(cardRow);
           if ((oneKey === "wildcard1" || oneKey === "wildcard2") && !recapBadge) {
             var wb = document.createElement("div");
@@ -3530,174 +3527,6 @@
     return stepIdx > 0 ? SHELF_UPPER_CLEAR_MS + SHELF_CROSSFADE_MS : SHELF_CROSSFADE_MS;
   }
 
-  function risquePublicWriteAerialDecision(seq, stepIdx, choice, counterPlayer) {
-    if (!window.risqueDisplayIsPublic) return;
-    try {
-      var payload = {
-        seq: Number(seq) || 0,
-        stepIdx: Number(stepIdx) || 0,
-        choice: String(choice || ""),
-        phase: "cardplay",
-        at: Date.now()
-      };
-      if (counterPlayer != null && String(counterPlayer).trim()) {
-        payload.counterPlayer = String(counterPlayer).trim();
-      }
-      localStorage.setItem(
-        PUBLIC_AERIAL_COUNTER_DECISION_KEY,
-        JSON.stringify(payload)
-      );
-    } catch (eAerialDecision) {
-      /* ignore */
-    }
-  }
-
-  function risquePublicRequiredCounterWildcard(step) {
-    var played = step && step.playedCardKey ? String(step.playedCardKey).toLowerCase() : "";
-    if (played === "wildcard1") return "wildcard2";
-    if (played === "wildcard2") return "wildcard1";
-    return "";
-  }
-
-  function risquePublicAerialCounterContext(gs, proc, step) {
-    if (!gs || !proc || !step || step.effect !== "aerial_attack") return null;
-    var required = risquePublicRequiredCounterWildcard(step);
-    var currentName = String((proc.playerName || gs.currentPlayer || "") + "");
-    var allOpposing = [];
-    var holders = [];
-    (gs.players || []).forEach(function (p) {
-      if (!p || String(p.name || "") === currentName) return;
-      allOpposing.push(String(p.name || ""));
-      var hasRequired =
-        !required ||
-        (Array.isArray(p.cards) &&
-          p.cards.some(function (c) {
-            return c && c.name && String(c.name).toLowerCase() === required;
-          }));
-      if (hasRequired) holders.push(String(p.name || ""));
-    });
-    return {
-      required: required,
-      allOpposing: allOpposing,
-      holders: holders
-    };
-  }
-
-  function risquePublicRenderAerialDecisionButtons(host, proc, step, stepIdx, onPicked) {
-    if (!host || !proc || !step || step.effect !== "aerial_attack") return false;
-    if (!window.risqueDisplayIsPublic || !risquePublicProcRecapAnimation(proc)) return false;
-    var gs = window.gameState;
-    var cx = risquePublicAerialCounterContext(gs, proc, step);
-    if (!cx) {
-      return false;
-    }
-    var row = document.createElement("div");
-    row.className = "risque-public-aerial-decision-row";
-    var btnConfirm = document.createElement("button");
-    btnConfirm.type = "button";
-    btnConfirm.className = "risque-public-aerial-decision-btn risque-public-aerial-decision-btn--confirm";
-    btnConfirm.textContent = "Confirm Aerial Attack";
-    var btnCounter = document.createElement("button");
-    btnCounter.type = "button";
-    btnCounter.className = "risque-public-aerial-decision-btn risque-public-aerial-decision-btn--counter";
-    btnCounter.textContent = "Aerial Attack Countered";
-    var select = document.createElement("select");
-    select.className = "risque-public-aerial-decision-select";
-    select.style.display = "none";
-    var ph = document.createElement("option");
-    ph.value = "";
-    ph.textContent = "Choose countering player";
-    select.appendChild(ph);
-    cx.allOpposing.forEach(function (nm) {
-      var o = document.createElement("option");
-      o.value = nm;
-      o.textContent = nm;
-      select.appendChild(o);
-    });
-    var msg = document.createElement("div");
-    msg.className = "risque-public-aerial-decision-msg";
-    var selectingCounter = false;
-    function setMsg(t) {
-      msg.textContent = t ? String(t) : "";
-      msg.style.display = t ? "block" : "none";
-    }
-    function lockAndResolve(choice, counterPlayer) {
-      btnConfirm.disabled = true;
-      btnCounter.disabled = true;
-      select.disabled = true;
-      setMsg("");
-      risquePublicWriteAerialDecision(proc.seq, stepIdx, choice, counterPlayer);
-      if (typeof onPicked === "function") onPicked(choice, counterPlayer);
-    }
-    btnConfirm.addEventListener("click", function () {
-      lockAndResolve("confirmed", "");
-    });
-    btnCounter.addEventListener("click", function () {
-      if (!selectingCounter) {
-        selectingCounter = true;
-        select.style.display = "inline-block";
-        setMsg("Select a player, then press Aerial Attack Countered again.");
-        return;
-      }
-      var picked = String(select.value || "");
-      if (!picked) {
-        setMsg("Pick a player to verify the counter.");
-        return;
-      }
-      if (cx.holders.indexOf(picked) === -1) {
-        setMsg(picked + " does not have the counter wildcard. Confirm to proceed.");
-        return;
-      }
-      lockAndResolve("countered", picked);
-    });
-    row.appendChild(select);
-    row.appendChild(btnConfirm);
-    row.appendChild(btnCounter);
-    row.appendChild(msg);
-    host.appendChild(row);
-    return true;
-  }
-
-  function risquePublicMountAerialDecisionPanel(proc, step, stepIdx, onPicked) {
-    if (!window.risqueDisplayIsPublic || !proc || !step || step.effect !== "aerial_attack") return false;
-    var upper = document.getElementById("risque-public-cp-shelf-upper-content");
-    var vt = document.getElementById("control-voice-text");
-    var host = upper || vt;
-    if (!host) return false;
-    var old = document.getElementById("risque-public-aerial-decision-portal");
-    if (old && old.parentNode) old.parentNode.removeChild(old);
-    var portal = document.createElement("div");
-    portal.id = "risque-public-aerial-decision-portal";
-    portal.className = "risque-public-aerial-decision-portal";
-    var mounted = risquePublicRenderAerialDecisionButtons(portal, proc, step, stepIdx, function (choice, counterPlayer) {
-      if (typeof onPicked === "function") onPicked(choice, counterPlayer);
-      var el = document.getElementById("risque-public-aerial-decision-portal");
-      if (el && el.parentNode) el.parentNode.removeChild(el);
-    });
-    if (!mounted) return false;
-    host.appendChild(portal);
-    return true;
-  }
-
-  function risquePublicMountAerialDecisionOverlay(proc, step, stepIdx, onPicked) {
-    if (!window.risqueDisplayIsPublic || !proc || !step || step.effect !== "aerial_attack") return false;
-    var old = document.getElementById("risque-public-aerial-decision-overlay");
-    if (old && old.parentNode) old.parentNode.removeChild(old);
-    var overlay = document.createElement("div");
-    overlay.id = "risque-public-aerial-decision-overlay";
-    overlay.className = "risque-public-aerial-decision-overlay";
-    var panel = document.createElement("div");
-    panel.className = "risque-public-aerial-decision-overlay-panel";
-    var mounted = risquePublicRenderAerialDecisionButtons(panel, proc, step, stepIdx, function (choice, counterPlayer) {
-      if (typeof onPicked === "function") onPicked(choice, counterPlayer);
-      var el = document.getElementById("risque-public-aerial-decision-overlay");
-      if (el && el.parentNode) el.parentNode.removeChild(el);
-    });
-    if (!mounted) return false;
-    overlay.appendChild(panel);
-    document.body.appendChild(overlay);
-    return true;
-  }
 
   function risquePublicShowAerialCancelledForStep(step, done) {
     var host = document.getElementById("risque-public-cp-shelf-upper-content");
@@ -3767,7 +3596,6 @@
         wrap.appendChild(rep);
       }
       var pk = step.playedCardKey || "";
-      var decisionRendered = false;
       if (pk) {
         var cluster = document.createElement("div");
         cluster.className = "risque-public-book-voice-recap-single";
@@ -3789,11 +3617,7 @@
           cardRow.appendChild(wb);
         }
         cluster.appendChild(cardRow);
-        decisionRendered = risquePublicRenderAerialDecisionButtons(cardRow, proc, step, stepIdx, onAerialPicked);
         wrap.appendChild(cluster);
-      }
-      if (!decisionRendered) {
-        risquePublicRenderAerialDecisionButtons(wrap, proc, step, stepIdx, onAerialPicked);
       }
       upperInner.appendChild(wrap);
       upperInner.style.opacity = "0";
@@ -3985,8 +3809,6 @@
       if (choice === "countered") {
         step.voice = "AERIAL ATTACK COUNTERED";
       }
-      var o0 = document.getElementById("risque-public-aerial-decision-overlay");
-      if (o0 && o0.parentNode) o0.parentNode.removeChild(o0);
       try {
         localStorage.removeItem(PUBLIC_AERIAL_DECISION_READY_KEY);
       } catch (eReadyClr) {
@@ -4026,39 +3848,8 @@
       risquePublicShelfRunBookStepAnimation(gs, step, idx, function (choice) {
         handleAerialChoice(choice);
       });
-      if (needsAerialDecision) {
-        setTimeout(function () {
-          var stillThisStep =
-            _pubBook &&
-            _pubBook.proc &&
-            _pubBook.proc.seq === proc.seq &&
-            _pubBook.stepIndex === idx &&
-            _pubBook.phase === "step";
-          if (!stillThisStep) return;
-          var hasDecisionUi = !!document.querySelector(".risque-public-aerial-decision-row");
-          if (hasDecisionUi) return;
-          /* Hard fallback: force-mount in upper pane (or control voice if upper pane missing). */
-          if (!risquePublicMountAerialDecisionPanel(proc, step, idx, handleAerialChoice)) {
-            if (!risquePublicMountAerialDecisionOverlay(proc, step, idx, handleAerialChoice)) {
-              /* Last-resort safety so the game never deadlocks. */
-              handleAerialChoice("confirmed");
-            }
-          }
-        }, 350);
-      }
     } else {
       risquePublicBookSetVoiceProcessing(gs, step, idx, handleAerialChoice);
-      if (needsAerialDecision) {
-        setTimeout(function () {
-          var hasDecisionUi = !!document.querySelector(".risque-public-aerial-decision-row");
-          if (hasDecisionUi) return;
-          if (!risquePublicMountAerialDecisionPanel(proc, step, idx, handleAerialChoice)) {
-            if (!risquePublicMountAerialDecisionOverlay(proc, step, idx, handleAerialChoice)) {
-              handleAerialChoice("confirmed");
-            }
-          }
-        }, 150);
-      }
     }
 
     if (risquePublicProcRecapAnimation(proc)) {
