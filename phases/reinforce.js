@@ -8,6 +8,15 @@ let moveMade = false;
 let keyboardBuffer = '';
 let reinforceWheelHandler = null;
 
+/** Both directions: move troops over the committed wildcard aerial link during reinforce. */
+function reinforceAerialConnects(gs, fromLabel, toLabel) {
+  if (!gs || !gs.aerialAttack || typeof gs.aerialAttack !== "object") return false;
+  if (!gs.aerialAttack.source || !gs.aerialAttack.target) return false;
+  const a = gs.aerialAttack.source;
+  const b = gs.aerialAttack.target;
+  return (fromLabel === a && toLabel === b) || (fromLabel === b && toLabel === a);
+}
+
 function reinforceLog(message, data) {
   const timestamp = new Date().toLocaleString("en-US", { timeZone: "America/New_York" });
   const logEntry = `[${timestamp}] [Reinforce] ${message}`;
@@ -493,6 +502,13 @@ function reinforceProceedAfterReinforce() {
   } else if (window.gameState) {
     delete window.gameState.risqueSpectatorFocusLabels;
   }
+  if (typeof window.risqueEndAerialBridgeForTurn === 'function') {
+    try {
+      window.risqueEndAerialBridgeForTurn();
+    } catch (eAerialEnd) {
+      /* ignore */
+    }
+  }
   var gs = window.gameState;
   if (!gs) return;
   var earned = !!(gs.cardEarnedViaAttack || gs.cardEarnedViaCardplay);
@@ -691,8 +707,10 @@ function handleReinforceTerritoryClick(label, owner, troops) {
       reinforceShowPrompt('Select adjacent territory to reinforce to.', [{ label: 'Cancel', onClick: resetReinforceSelection }], null, 'You do not own this territory.');
       return;
     }
-    if (!window.gameUtils.getAdjacencies(selectedSource).includes(label)) {
-      reinforceShowPrompt('Select adjacent territory to reinforce to.', [{ label: 'Cancel', onClick: resetReinforceSelection }], null, 'Territory must be adjacent.');
+    const adj = window.gameUtils.getAdjacencies(selectedSource).includes(label);
+    const byAerial = reinforceAerialConnects(window.gameState, selectedSource, label);
+    if (!adj && !byAerial) {
+      reinforceShowPrompt('Select adjacent territory to reinforce to.', [{ label: 'Cancel', onClick: resetReinforceSelection }], null, 'Territory must be adjacent (or at the other end of your aerial link).');
       return;
     }
     selectedDestination = label;
@@ -773,6 +791,17 @@ function initReinforcePhase() {
     reinforceSaveState();
     window.__risqueReinforceInitialized = true;
     reinforceLog('Reinforcement initialized', { player: window.gameState.currentPlayer });
+    if (typeof window.risqueRedrawAerialBridgeOverlay === "function") {
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          try {
+            window.risqueRedrawAerialBridgeOverlay();
+          } catch (eBr) {
+            /* ignore */
+          }
+        });
+      });
+    }
   }
 
   /* game.html shell already set window.gameState — async loadGameState deferred markers for ~1 frame. */

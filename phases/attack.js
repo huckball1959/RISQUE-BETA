@@ -92,12 +92,38 @@ let aerialBridge = null;
 
 /** @returns {{ source: string, target: string } | null} */
 function aerialBridgeFromGameState(gs) {
-  const a = gs && gs.aerialAttack;
+  if (!gs) return null;
+  const p = gs.risqueAerialLinkPending;
+  if (p && typeof p === 'object' && p.source && p.target) return p;
+  const a = gs.aerialAttack;
   if (a && typeof a === 'object' && a.source && a.target) return a;
+  return null;
+}
+
+/**
+ * A committed (final) link for this turn — excludes `risqueAerialLinkPending` preview rows.
+ * @returns {{ source: string, target: string } | null}
+ */
+function committedAerialLinkForThisTurn() {
+  if (window.gameState && window.gameState.risqueAerialLinkPending) {
+    return null;
+  }
+  const a = window.gameState && window.gameState.aerialAttack;
+  if (a && typeof a === 'object' && a.source && a.target) {
+    return { source: String(a.source), target: String(a.target) };
+  }
+  if (aerialBridge && aerialBridge.source && aerialBridge.target) {
+    return { source: String(aerialBridge.source), target: String(aerialBridge.target) };
+  }
   return null;
 }
 let isSelectingAerialSource = false;
 let isSelectingAerialTarget = false;
+/** After source+target are picked, the link is not final until the player hits Confirm. */
+let isAwaitingAerialConfirm = false;
+let aerialPendingPreview = null;
+/** If a committed link existed in state when we opened the preview, restore it on Back. */
+let aerialSnapshotBeforePreview = null;
 let attackerInitialTroops = 0;
 let transferCompleted = false;
 /** Document capture listener so wheel works over the map, not only on #troops-input (reinforce-style). */
@@ -999,6 +1025,21 @@ window.risqueClearAerialBridgeOverlay = function risqueClearAerialBridgeOverlay(
   }
 };
 
+/**
+ * End-of-reinforce / end-of-attack: clear the wildcard aerial link from state and the overlay.
+ * The link persists from attack into reinforce; cleared when leaving reinforce (receive card) or equivalent.
+ */
+window.risqueEndAerialBridgeForTurn = function risqueEndAerialBridgeForTurn() {
+  if (!window.gameState) return;
+  window.gameState.aerialAttack = false;
+  delete window.gameState.risqueAerialLinkPending;
+  delete window.gameState.risqueAerialLinkLocked;
+  aerialBridge = null;
+  if (typeof window.risqueClearAerialBridgeOverlay === 'function') {
+    window.risqueClearAerialBridgeOverlay();
+  }
+};
+
 function risqueStopConfirmSlotFlash() {
   for (let i = 0; i < 6; i += 1) {
     const b = document.getElementById(`control-btn-${i}`);
@@ -1038,7 +1079,7 @@ function syncAttackPhaseActionLocks() {
         : 0;
   const aerialUnlocked = !!(gs && gs.risqueAerialUnlockedAfterCombat);
   const aerialBaseGrey =
-    !aerialUnlocked || isSelectingAerialSource || isSelectingAerialTarget;
+    !aerialUnlocked || isSelectingAerialSource || isSelectingAerialTarget || isAwaitingAerialConfirm;
   if (aerialEl) aerialEl.disabled = !!pending || aerialBaseGrey || uses < 1;
   if (aerialEl2) aerialEl2.disabled = !!pending || aerialBaseGrey || uses < 2;
   if (reinforceEl) reinforceEl.disabled = !!pending;
@@ -2789,6 +2830,22 @@ function initTroopTransfer() {
 }
 
 function cancelAttack() {
+  if (isAwaitingAerialConfirm || (window.gameState && window.gameState.risqueAerialLinkPending)) {
+    backFromAerialPreview();
+    return;
+  }
+  /* A committed wildcard aerial link (source + target) stays on the map until attack phase
+   * ends; Cancel / New attack only clear the in-progress from/to *attack* pick, not the link.
+   * `risqueAerialLinkLocked` is set only when the player confirms the preview. */
+  const aerialLink = committedAerialLinkForThisTurn();
+  const keepAerialBridge =
+    !!(window.gameState && window.gameState.risqueAerialLinkLocked) || aerialLink != null;
+  if (keepAerialBridge && aerialLink && window.gameState) {
+    window.gameState.aerialAttack = aerialLink;
+    aerialBridge = aerialLink;
+  } else if (keepAerialBridge && window.gameState && window.gameState.risqueAerialLinkLocked) {
+    aerialBridge = aerialBridgeFromGameState(window.gameState);
+  }
   /* CLR / New attack / Cancel while post-capture troop transfer is open leaves attackPhase ===
    * 'pending_transfer'. handleTerritoryClick returns immediately in that case — the map appears
    * idle ("Select territory to attack from") but clicks are ignored until this lock is cleared. */
@@ -2830,19 +2887,52 @@ function cancelAttack() {
   clearPausableBlitzRoundTimers();
   pausableBlitzCondThreshold = null;
   isAcquiring = false;
-  aerialBridge = null;
-  isSelectingAerialSource = false;
-  isSelectingAerialTarget = false;
-  if (window.gameState) {
-    window.gameState.aerialAttack = false;
+  if (!keepAerialBridge) {
+    aerialBridge = null;
+    isSelectingAerialSource = false;
+    isSelectingAerialTarget = false;
+    isAwaitingAerialConfirm = false;
+    aerialPendingPreview = null;
+    aerialSnapshotBeforePreview = null;
+    if (window.gameState) {
+      window.gameState.aerialAttack = false;
+      delete window.gameState.risqueAerialLinkPending;
+      delete window.gameState.risqueAerialLinkLocked;
+    }
+    if (elements.aerialBridgeGroup) elements.aerialBridgeGroup.innerHTML = '';
+  } else {
+    isSelectingAerialSource = false;
+    isSelectingAerialTarget = false;
   }
   if (elements.pausableBlitzText) elements.pausableBlitzText.textContent = 'PBLZ';
   syncPausableBlitzButtonVisibility();
   updateBattlePanelReadout();
   document.querySelectorAll('.territory-circle.selected').forEach(c => c.classList.remove('selected'));
-  if (elements.aerialBridgeGroup) elements.aerialBridgeGroup.innerHTML = '';
-  showPrompt('Select territory to attack from.', [{ label: 'Cancel', onClick: cancelAttack }]);
   window.gameUtils.renderTerritories(null, window.gameState);
+  if (keepAerialBridge && typeof window.risqueRedrawAerialBridgeOverlay === 'function') {
+    /* Match public TV: draw after map layout (double rAF). */
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        try {
+          window.risqueRedrawAerialBridgeOverlay();
+        } catch (eRedraw) {
+          /* ignore */
+        }
+      });
+    });
+  } else if (keepAerialBridge) {
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        try {
+          aerialBridge = aerialBridgeFromGameState(window.gameState);
+          renderAerialBridge();
+        } catch (eR2) {
+          /* ignore */
+        }
+      });
+    });
+  }
+  showPrompt('Select territory to attack from.', [{ label: 'Cancel', onClick: cancelAttack }]);
   if (typeof window.risqueClearSpectatorFocus === 'function') {
     window.risqueClearSpectatorFocus();
   }
@@ -4291,6 +4381,7 @@ function startInstantCampaignPlanning() {
   attackChainFromCampaign = false;
   isSelectingAerialSource = false;
   isSelectingAerialTarget = false;
+  isAwaitingAerialConfirm = false;
   attacker = null;
   defender = null;
   updateBattlePanelReadout();
@@ -4331,6 +4422,7 @@ function startInstantCondCampaignPlanning() {
   attackChainFromCampaign = false;
   isSelectingAerialSource = false;
   isSelectingAerialTarget = false;
+  isAwaitingAerialConfirm = false;
   attacker = null;
   defender = null;
   updateBattlePanelReadout();
@@ -4370,6 +4462,7 @@ function startPauseCampaignPlanning() {
   attackChainFromCampaign = false;
   isSelectingAerialSource = false;
   isSelectingAerialTarget = false;
+  isAwaitingAerialConfirm = false;
   attacker = null;
   defender = null;
   updateBattlePanelReadout();
@@ -4794,6 +4887,7 @@ function startCampaignCheckConPlanning() {
   attackChainFromCampaign = false;
   isSelectingAerialSource = false;
   isSelectingAerialTarget = false;
+  isAwaitingAerialConfirm = false;
   attacker = null;
   defender = null;
   updateBattlePanelReadout();
@@ -4904,7 +4998,8 @@ function goToReinforce() {
     } else {
       window.gameState.aerialAttackEligible = false;
     }
-    window.gameState.aerialAttack = false;
+    /* Wildcard aerial *uses* are spent; the drawn link stays for reinforce moves until receive-card. */
+    delete window.gameState.risqueAerialLinkPending;
   }
   window.gameState.phase = 'reinforce';
   saveGameState();
@@ -4917,7 +5012,99 @@ function goToReinforce() {
   }, 1000);
 }
 
+function backFromAerialPreview() {
+  isAwaitingAerialConfirm = false;
+  const restore = aerialSnapshotBeforePreview;
+  aerialSnapshotBeforePreview = null;
+  aerialPendingPreview = null;
+  if (window.gameState) {
+    delete window.gameState.risqueAerialLinkPending;
+    if (restore && restore.source && restore.target) {
+      window.gameState.aerialAttack = { source: String(restore.source), target: String(restore.target) };
+    } else {
+      window.gameState.aerialAttack = false;
+      delete window.gameState.risqueAerialLinkLocked;
+    }
+  }
+  aerialBridge = aerialBridgeFromGameState(window.gameState);
+  if (elements.aerialBridgeGroup) elements.aerialBridgeGroup.innerHTML = '';
+  if (aerialBridge) {
+    renderAerialBridge();
+  }
+  isSelectingAerialSource = true;
+  isSelectingAerialTarget = false;
+  attacker = null;
+  defender = null;
+  updateBattlePanelReadout();
+  const cur = window.gameState && window.gameState.currentPlayer ? window.gameState.currentPlayer : '';
+  if (window.risqueRuntimeHud && typeof window.risqueRuntimeHud.setControlVoiceText === 'function') {
+    window.risqueRuntimeHud.setControlVoiceText(String(cur).toUpperCase(), 'Aerial attack: select source.', {
+      force: true
+    });
+  }
+  showPrompt('Select source territory for aerial attack.', [{ label: 'Cancel', onClick: cancelAttack }]);
+  saveGameState();
+  if (typeof window.risqueMirrorPushGameState === 'function') {
+    window.risqueMirrorPushGameState();
+  }
+}
+
+function confirmAerialBridgeCommit() {
+  if (!aerialPendingPreview || !aerialPendingPreview.source || !aerialPendingPreview.target) {
+    isAwaitingAerialConfirm = false;
+    return;
+  }
+  isAwaitingAerialConfirm = false;
+  const link = {
+    source: String(aerialPendingPreview.source),
+    target: String(aerialPendingPreview.target)
+  };
+  aerialPendingPreview = null;
+  aerialSnapshotBeforePreview = null;
+  if (window.gameState) {
+    delete window.gameState.risqueAerialLinkPending;
+    window.gameState.aerialAttack = link;
+    window.gameState.risqueAerialLinkLocked = true;
+  }
+  aerialBridge = link;
+  if (window.gameUtils && typeof window.gameUtils.addAerialAttackUses === 'function') {
+    window.gameUtils.addAerialAttackUses(window.gameState, -1);
+  } else {
+    window.gameState.aerialAttackEligible = false;
+  }
+  renderAerialBridge();
+  dismissPrompt();
+  prependCombatLog(
+    `${window.gameState.currentPlayer}: aerial bridge set ${prettyTerritoryName(link.source)} ↔ ${prettyTerritoryName(
+      link.target
+    )}.`,
+    'voice'
+  );
+  if (window.risqueRuntimeHud && typeof window.risqueRuntimeHud.setControlVoiceText === 'function') {
+    window.risqueRuntimeHud.setControlVoiceText(
+      String(window.gameState.currentPlayer).toUpperCase(),
+      `Aerial link: ${prettyTerritoryName(link.source)} → ${prettyTerritoryName(link.target)}.`,
+      { force: true }
+    );
+  }
+  attacker = null;
+  defender = null;
+  updateBattlePanelReadout();
+  saveGameState();
+  syncAttackPhaseActionLocks();
+  if (typeof window.risqueMirrorPushGameState === 'function') {
+    window.risqueMirrorPushGameState();
+  }
+  showPrompt('Select territory to attack from.', [{ label: 'Cancel', onClick: cancelAttack }]);
+}
+
 function startAerialAttack() {
+  isAwaitingAerialConfirm = false;
+  aerialPendingPreview = null;
+  aerialSnapshotBeforePreview = null;
+  if (window.gameState) {
+    delete window.gameState.risqueAerialLinkPending;
+  }
   isSelectingAerialSource = true;
   const cur = window.gameState && window.gameState.currentPlayer ? window.gameState.currentPlayer : '';
   prependCombatLog(`${cur}: AIR — pick source territory (2+ troops).`, 'voice');
@@ -4931,6 +5118,7 @@ function startAerialAttack() {
 
 window.handleTerritoryClick = function(label, owner, troops) {
   if (window.gameState.attackPhase === 'pending_transfer') return;
+  if (isAwaitingAerialConfirm) return;
 
   if (
     campaignMode === 'armed' ||
@@ -4987,33 +5175,45 @@ window.handleTerritoryClick = function(label, owner, troops) {
 
   if (isSelectingAerialTarget) {
     if (owner === window.gameState.currentPlayer) return;
-    aerialBridge = { source: attacker.label, target: label };
-    window.gameState.aerialAttack = aerialBridge;
-    if (window.gameUtils && typeof window.gameUtils.addAerialAttackUses === 'function') {
-      window.gameUtils.addAerialAttackUses(window.gameState, -1);
-    } else {
-      window.gameState.aerialAttackEligible = false;
-    }
     isSelectingAerialTarget = false;
+    isAwaitingAerialConfirm = true;
+    if (window.gameState.risqueAerialLinkLocked && window.gameState.aerialAttack) {
+      aerialSnapshotBeforePreview = {
+        source: String(window.gameState.aerialAttack.source),
+        target: String(window.gameState.aerialAttack.target)
+      };
+    } else {
+      aerialSnapshotBeforePreview = null;
+    }
+    const pending = { source: attacker.label, target: label };
+    aerialPendingPreview = pending;
+    if (window.gameState) {
+      window.gameState.risqueAerialLinkPending = pending;
+    }
+    aerialBridge = pending;
+    updateBattlePanelReadout();
     renderAerialBridge();
-    dismissPrompt();
-    prependCombatLog(
-      `${window.gameState.currentPlayer}: aerial bridge set ${prettyTerritoryName(attacker.label)} ↔ ${prettyTerritoryName(label)}.`,
-      'voice'
-    );
+    saveGameState();
+    if (typeof window.risqueMirrorPushGameState === 'function') {
+      window.risqueMirrorPushGameState();
+    }
+    const srcN = prettyTerritoryName(pending.source);
+    const tgtN = prettyTerritoryName(pending.target);
     if (window.risqueRuntimeHud && typeof window.risqueRuntimeHud.setControlVoiceText === 'function') {
+      const curN = String(window.gameState.currentPlayer).toUpperCase();
       window.risqueRuntimeHud.setControlVoiceText(
-        String(window.gameState.currentPlayer).toUpperCase(),
-        `Aerial link: ${prettyTerritoryName(attacker.label)} → ${prettyTerritoryName(label)}.`,
+        curN,
+        `Confirm: ${srcN} → ${tgtN} (aerial).`,
         { force: true }
       );
     }
-    attacker = null;
-    defender = null;
-    updateBattlePanelReadout();
-    saveGameState();
-    syncAttackPhaseActionLocks();
-    showPrompt('Select territory to attack from.', [{ label: 'Cancel', onClick: cancelAttack }]);
+    showPrompt(
+      `Confirm <strong>wildcard aerial link</strong><br><br>${srcN} &rarr; ${tgtN}`,
+      [
+        { label: 'Confirm', onClick: confirmAerialBridgeCommit },
+        { label: 'Back', onClick: backFromAerialPreview }
+      ]
+    );
     return;
   }
 
@@ -5133,6 +5333,15 @@ function initAttackPhase(mountEpoch) {
       aerialStateMigrated = true;
     } else if (gameState.aerialAttack != null && typeof gameState.aerialAttack !== 'object') {
       gameState.aerialAttack = false;
+      aerialStateMigrated = true;
+    }
+    if (gameState.risqueAerialLinkPending) {
+      delete gameState.risqueAerialLinkPending;
+      aerialStateMigrated = true;
+    }
+    const oa = gameState.aerialAttack;
+    if (oa && typeof oa === 'object' && oa.source && oa.target && !gameState.risqueAerialLinkLocked) {
+      gameState.risqueAerialLinkLocked = true;
       aerialStateMigrated = true;
     }
 

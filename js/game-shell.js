@@ -4361,22 +4361,33 @@
         window.risqueRuntimeHud.syncPosition();
       });
     }
-    if (window.risqueDisplayIsPublic && String(gs.phase || "") === "attack") {
+    if (
+      window.risqueDisplayIsPublic &&
+      (String(gs.phase || "") === "attack" || String(gs.phase || "") === "reinforce")
+    ) {
       requestAnimationFrame(function () {
         requestAnimationFrame(function () {
           try {
-            if (
-              gs &&
-              gs.aerialAttack &&
-              typeof gs.aerialAttack === "object" &&
-              gs.aerialAttack.source &&
-              gs.aerialAttack.target &&
-              typeof window.risqueRedrawAerialBridgeOverlay === "function"
-            ) {
-              window.risqueRedrawAerialBridgeOverlay();
-            } else if (typeof window.risqueClearAerialBridgeOverlay === "function") {
-              window.risqueClearAerialBridgeOverlay();
-            }
+            (function () {
+              var ap =
+                gs &&
+                gs.risqueAerialLinkPending &&
+                typeof gs.risqueAerialLinkPending === "object" &&
+                gs.risqueAerialLinkPending.source &&
+                gs.risqueAerialLinkPending.target
+                  ? gs.risqueAerialLinkPending
+                  : null;
+              var ad =
+                gs && gs.aerialAttack && typeof gs.aerialAttack === "object" && gs.aerialAttack.source && gs.aerialAttack.target
+                  ? gs.aerialAttack
+                  : null;
+              var al = ap || ad;
+              if (al && typeof window.risqueRedrawAerialBridgeOverlay === "function") {
+                window.risqueRedrawAerialBridgeOverlay();
+              } else if (typeof window.risqueClearAerialBridgeOverlay === "function") {
+                window.risqueClearAerialBridgeOverlay();
+              }
+            })();
           } catch (eAerialPub) {
             /* ignore */
           }
@@ -5719,23 +5730,35 @@
             /* ignore */
           }
         }
-        if (
-          String(state.phase || "") === "attack" &&
-          state.aerialAttack &&
-          typeof state.aerialAttack === "object" &&
-          state.aerialAttack.source &&
-          state.aerialAttack.target &&
-          typeof window.risqueRedrawAerialBridgeOverlay === "function"
-        ) {
-          requestAnimationFrame(function () {
-            requestAnimationFrame(function () {
-              try {
-                window.risqueRedrawAerialBridgeOverlay();
-              } catch (eBr) {
-                /* ignore */
-              }
-            });
-          });
+        if (String(state.phase || "") === "attack" || String(state.phase || "") === "reinforce") {
+          (function () {
+            var ap =
+              state.risqueAerialLinkPending &&
+              typeof state.risqueAerialLinkPending === "object" &&
+              state.risqueAerialLinkPending.source &&
+              state.risqueAerialLinkPending.target
+                ? state.risqueAerialLinkPending
+                : null;
+            var ad =
+              state.aerialAttack &&
+              typeof state.aerialAttack === "object" &&
+              state.aerialAttack.source &&
+              state.aerialAttack.target
+                ? state.aerialAttack
+                : null;
+            var al = ap || ad;
+            if (al && typeof window.risqueRedrawAerialBridgeOverlay === "function") {
+              requestAnimationFrame(function () {
+                requestAnimationFrame(function () {
+                  try {
+                    window.risqueRedrawAerialBridgeOverlay();
+                  } catch (eBr) {
+                    /* ignore */
+                  }
+                });
+              });
+            }
+          })();
         }
         if (state && state.risqueGameWinImmediate && state.winner) {
           if (typeof window.risqueMountImmediateGameWinOverlay === "function") {
