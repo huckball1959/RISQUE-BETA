@@ -12,7 +12,6 @@
       '<div class="hud-title-stack__stats-slot" aria-hidden="true"></div>' +
       '<div class="hud-title-stack__host-top-buttons">' +
       '<button type="button" id="risque-private-stats-toggle" class="risque-private-stats-toggle risque-host-topbar-btn" role="switch" aria-checked="false" aria-label="Toggle large stats in control panel" title="STATS — enlarge table in panel">STATS</button>' +
-      '<button type="button" id="risque-host-instant-replay-btn" class="risque-host-instant-replay-btn risque-host-topbar-btn" disabled title="Replay unavailable until moves are recorded" aria-label="Battle replay — map after each fight (host only)">REPLAY</button>' +
       '<button type="button" id="risque-host-cards-played-toggle" class="risque-host-cards-played-toggle risque-host-topbar-btn" role="switch" aria-checked="false" aria-label="Toggle cards played gallery in control panel" title="Cards played — territory cards cashed in this game">CARDS PLAYED</button>' +
       '<button type="button" id="risque-host-lucky-toggle" class="risque-host-lucky-toggle risque-host-topbar-btn" role="switch" aria-checked="false" aria-label="Toggle lucky dice and battle stats in control panel" title="Lucky — six rate and battle round win rates">LUCKY</button>' +
       '<button type="button" id="risque-host-cards-in-hand-toggle" class="risque-host-cards-in-hand-toggle risque-host-topbar-btn" role="switch" aria-checked="false" aria-label="Show current player cards in hand" title="Cards in hand — current player\'s territory cards">CARDS IN HAND</button>' +
@@ -385,6 +384,9 @@
     }
     var cond = document.getElementById("cond-threshold");
     if (cond) cond.disabled = !on;
+    if (on && typeof window.risqueSyncAttackPhaseActionLocks === "function") {
+      window.risqueSyncAttackPhaseActionLocks();
+    }
     if (!on) {
       requestAnimationFrame(function () {
         repairAttackStepChromeButtons();

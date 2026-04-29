@@ -65,6 +65,15 @@
       window.risqueRuntimeHud.ensure(uiOverlay);
       window.risqueRuntimeHud.clearPhaseSlot();
       window.risqueRuntimeHud.setAttackChromeInteractive(true);
+      requestAnimationFrame(function () {
+        if (typeof window.risqueSyncAttackPhaseActionLocks === "function") {
+          try {
+            window.risqueSyncAttackPhaseActionLocks();
+          } catch (eAtkLock) {
+            /* ignore */
+          }
+        }
+      });
       if (window.gameState) {
         window.risqueRuntimeHud.updateTurnBannerFromState(window.gameState);
         if (typeof window.risqueRuntimeHud.setControlVoiceText === "function") {

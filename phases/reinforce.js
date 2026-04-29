@@ -670,6 +670,9 @@ function confirmReinforceMove() {
   }
   window.gameUtils.renderTerritories(null, window.gameState);
   window.gameUtils.renderStats(window.gameState);
+  if (typeof window.risqueReplayRecordReinforce === "function") {
+    window.risqueReplayRecordReinforce(window.gameState);
+  }
   refreshReinforceCompactHud();
   /* Host: primary handoff runs from core risqueOnHostTransferPulseComplete when the pulse ends;
    * fallback timer above covers throttled rAF / edge cases. */

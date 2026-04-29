@@ -41,14 +41,6 @@
       }
     }
 
-    if (typeof window.risqueReplayMergeTapeFromSidecar === "function" && window.gameState) {
-      try {
-        window.risqueReplayMergeTapeFromSidecar(window.gameState);
-      } catch (eMerge) {
-        /* ignore */
-      }
-    }
-
     if (window.risqueRuntimeHud) {
       window.risqueRuntimeHud.ensure(uiOverlay);
       window.risqueRuntimeHud.clearPhaseSlot();
@@ -58,19 +50,16 @@
       }
 
       if (typeof window.risqueRuntimeHud.setControlVoiceText === "function") {
-        var sub =
-          typeof window.risqueReplayHasTape === "function" && window.risqueReplayHasTape(window.gameState)
-            ? "On the host screen, tap REPLAY for battle results (TV follows). Or use STATS / LUCKY / CARDS / combat log."
-            : "Use STATS, LUCKY, CARDS PLAYED, and the combat log.";
-        window.risqueRuntimeHud.setControlVoiceText(String(wname).toUpperCase() + " WINS — POSTGAME REVIEW", sub, {
-          force: true
-        });
+        window.risqueRuntimeHud.setControlVoiceText(
+          String(wname).toUpperCase() + " WINS — POSTGAME REVIEW",
+          "Use STATS, LUCKY, CARDS PLAYED, and the combat log. replay-machine.html: one *-replay.json per round, or select several to play a range.",
+          {
+            force: true
+          }
+        );
       }
 
       removeStaleTopbarReview();
-      if (typeof window.risqueReplaySyncHostButton === "function") {
-        window.risqueReplaySyncHostButton(window.gameState);
-      }
 
       var rSlot = document.getElementById("risque-phase-content");
       if (rSlot) {
@@ -78,7 +67,7 @@
           '<div class="postgame-compact-root">' +
           '<p class="postgame-compact-title">POSTGAME</p>' +
           '<p class="postgame-compact-copy">' +
-          "Map and full statistics are frozen. Battle replay runs from the host window; this TV follows. Exit clears this session." +
+          "Map and full statistics are frozen. Battle replay uses replay-machine.html on the host (not this TV). Exit clears this session." +
           "</p>" +
           '<div class="postgame-compact-actions">' +
           '<button type="button" class="postgame-btn postgame-btn--primary" id="risque-postgame-exit">' +

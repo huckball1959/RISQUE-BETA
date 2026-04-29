@@ -22,9 +22,80 @@
   var MAX_PLAYED_CARDS_GALLERY_ENTRIES = 180;
   var PUBLIC_MIRROR_POLL_MS = 100;
   var MAX_ROUND_AUTOSAVES = 10;
+  var SIDECAR_INDEX_KEY = "risqueSidecarIndexV1";
   /** In-memory only: cleared on every reload / hard refresh; round JSON writes use File System Access API. */
   var __risqueRoundAutosaveDirHandle = null;
   var __risqueRoundAutosavePickerBusy = false;
+
+  function sidecarIndexRead() {
+    var o = tryParse(localStorage.getItem(SIDECAR_INDEX_KEY) || "{}");
+    return o && typeof o === "object" ? o : {};
+  }
+
+  function sidecarIndexWrite(idx) {
+    try {
+      localStorage.setItem(SIDECAR_INDEX_KEY, JSON.stringify(idx && typeof idx === "object" ? idx : {}));
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  function sidecarPut(type, payload, meta) {
+    if (!type) return null;
+    var id =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : "rsq-sc-" + String(Date.now()) + "-" + String(Math.floor(Math.random() * 1e9));
+    var key = "risqueSidecar:" + String(type) + ":" + id;
+    var row = {
+      type: String(type),
+      at: Date.now(),
+      payload: payload != null ? String(payload) : "",
+      meta: meta && typeof meta === "object" ? meta : {}
+    };
+    if (!risqueTryWriteLocalStorageWithQuotaFallback(key, JSON.stringify(row))) {
+      return null;
+    }
+    var idx = sidecarIndexRead();
+    if (!Array.isArray(idx[type])) idx[type] = [];
+    idx[type].push({ id: id, at: row.at });
+    sidecarIndexWrite(idx);
+    return id;
+  }
+
+  function sidecarGet(type, id) {
+    if (!type || !id) return null;
+    var key = "risqueSidecar:" + String(type) + ":" + String(id);
+    var row = tryParse(localStorage.getItem(key) || "null");
+    if (!row || typeof row !== "object") return null;
+    return row.payload != null ? String(row.payload) : "";
+  }
+
+  function sidecarPrune(type, keepN, keepIdsMap) {
+    if (!type) return;
+    var idx = sidecarIndexRead();
+    var arr = Array.isArray(idx[type]) ? idx[type] : [];
+    var keep = Number(keepN) || 0;
+    if (arr.length <= keep) return;
+    var retained = arr.slice(arr.length - keep);
+    var retainedMap = {};
+    retained.forEach(function (r) {
+      if (r && r.id) retainedMap[String(r.id)] = true;
+    });
+    var stickyMap = keepIdsMap && typeof keepIdsMap === "object" ? keepIdsMap : {};
+    arr.forEach(function (r) {
+      var id = r && r.id ? String(r.id) : "";
+      if (!id) return;
+      if (retainedMap[id] || stickyMap[id]) return;
+      try {
+        localStorage.removeItem("risqueSidecar:" + String(type) + ":" + id);
+      } catch (eRm) {
+        /* ignore */
+      }
+    });
+    idx[type] = retained;
+    sidecarIndexWrite(idx);
+  }
   var appEl = document.getElementById("app");
   var phaseLabelEl = document.getElementById("phaseLabel");
   var stageHost = document.querySelector(".runtime-stage-host");
@@ -208,13 +279,19 @@
     typeof window.risqueLoginRecoveryUrl === "function"
       ? window.risqueLoginRecoveryUrl()
       : "game.html?phase=login&loginLegacyNext=game.html%3Fphase%3DplayerSelect%26selectKind%3DfirstCard&loginLoadRedirect=game.html%3Fphase%3Dcardplay%26legacyNext%3Dincome.html";
-  var BOARD_CORNER_TOOLS_VERSION = "12";
+  var BOARD_CORNER_TOOLS_VERSION = "13";
 
   function risqueDoc(name) {
     if (typeof window.risqueResolveDocUrl === "function") {
       return window.risqueResolveDocUrl(name);
     }
-    var fb = { index: "index.html", manual: "docs/manual.html", help: "docs/help.html", game: "game.html" };
+    var fb = {
+      index: "index.html",
+      manual: "docs/manual.html",
+      help: "docs/help.html",
+      game: "game.html",
+      replayMachine: "replay-machine.html"
+    };
     return fb[name] || "";
   }
 
@@ -498,6 +575,59 @@
     return out;
   }
 
+  function risqueTryWriteLocalStorageWithQuotaFallback(key, value) {
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch (err) {
+      if (!(err && (err.name === "QuotaExceededError" || err.code === 22))) return false;
+    }
+    try {
+      var rawLogs = localStorage.getItem(LOG_KEY);
+      var logsArr = tryParse(rawLogs || "[]");
+      if (Array.isArray(logsArr) && logsArr.length > 40) {
+        localStorage.setItem(LOG_KEY, JSON.stringify(logsArr.slice(-40)));
+      } else {
+        localStorage.removeItem(LOG_KEY);
+      }
+    } catch (eTrim) {
+      try {
+        localStorage.removeItem(LOG_KEY);
+      } catch (eRm) {
+        /* ignore */
+      }
+    }
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch (errRetry) {
+      return false;
+    }
+  }
+
+  function risqueBuildEmergencyStorageState(forDisk) {
+    var lite = JSON.parse(JSON.stringify(forDisk || {}));
+    /* Emergency quota fallback: keep live game, drop replay/history blobs first. */
+    delete lite.risqueReplayTape;
+    delete lite.risqueReplayByRound;
+    delete lite.risqueReplayPlayerColors;
+    delete lite.risquePlayedCardsGallery;
+    delete lite.risqueLuckyLedger;
+    return lite;
+  }
+
+  function risqueBuildEmergencyMirrorPayload(mirrorPayload) {
+    var lite = JSON.parse(JSON.stringify(mirrorPayload || {}));
+    /* TV needs map + phase sync; trim bulky recap/log payloads under quota pressure. */
+    delete lite.risqueCombatLogTail;
+    delete lite.risquePublicBookProcessing;
+    delete lite.risquePublicCardplayRecap;
+    delete lite.risquePublicLoginFormMirror;
+    delete lite.risqueReplayTape;
+    delete lite.risqueReplayByRound;
+    return lite;
+  }
+
   /**
    * Host only: persist full gameState to STORAGE_KEY, then write PUBLIC_MIRROR_KEY (frozen board during
    * private cardplay draft so the TV tab is not overwritten by host saves).
@@ -522,6 +652,7 @@
       delete forDisk.risquePublicLoginHostFade;
       delete forDisk.risquePublicLoginTvBlackout;
       delete forDisk.risquePublicReplayEliminationSplash;
+      /* Host STORAGE_KEY keeps replay tape for session resume; TV mirror payload still omits it below. */
       /* Keep risquePublicCampaignWarpathLabels on disk so STORAGE_KEY matches mirror map highlights (refreshVisuals / seq edge cases). */
       /* Keep cardplay TV recap + gate flags on disk so the host can show “Continue to Income” after save/reload. */
       if (String(gs.phase || "") !== "cardplay" && String(gs.phase || "") !== "con-cardplay") {
@@ -533,7 +664,12 @@
         delete forDisk.risquePublicCardplaySpectatorHandCount;
         delete forDisk.risquePublicCardplaySpectatorPlayer;
       }
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(forDisk));
+      var forDiskJson = JSON.stringify(forDisk);
+      if (!risqueTryWriteLocalStorageWithQuotaFallback(STORAGE_KEY, forDiskJson)) {
+        var emergencyDisk = risqueBuildEmergencyStorageState(forDisk);
+        var emergencyDiskJson = JSON.stringify(emergencyDisk);
+        risqueTryWriteLocalStorageWithQuotaFallback(STORAGE_KEY, emergencyDiskJson);
+      }
       var out = gs;
       var snap = gs.risqueCardplayPublicMirrorSnapshot;
       if (
@@ -624,24 +760,15 @@
         delete mirrorPayload.phaseReplayIndex;
         /* Full tape can exceed localStorage quota; TV only needs current frame + playback flag. */
         delete mirrorPayload.risqueReplayTape;
-        /* Public TV: compact round readout during instant replay (map corner HUD). */
-        if (mirrorPayload.risqueReplayPlaybackActive) {
-          var rrPub = mirrorPayload.risqueReplayHudRound;
-          var nPub = typeof rrPub === "number" ? rrPub : parseInt(rrPub, 10);
-          if (!isFinite(nPub) || nPub < 1) {
-            var r0 = mirrorPayload.round;
-            nPub = typeof r0 === "number" ? r0 : parseInt(r0, 10);
-          }
-          if (isFinite(nPub) && nPub >= 1) {
-            mirrorPayload.risquePublicReplayRound = nPub;
-          } else {
-            delete mirrorPayload.risquePublicReplayRound;
-          }
-        } else {
-          delete mirrorPayload.risquePublicReplayRound;
-        }
+        delete mirrorPayload.risqueReplayByRound;
+        delete mirrorPayload.risquePublicReplayRound;
       }
-      localStorage.setItem(PUBLIC_MIRROR_KEY, JSON.stringify(mirrorPayload));
+      var mirrorJson = JSON.stringify(mirrorPayload);
+      if (!risqueTryWriteLocalStorageWithQuotaFallback(PUBLIC_MIRROR_KEY, mirrorJson)) {
+        var emergencyMirror = risqueBuildEmergencyMirrorPayload(mirrorPayload);
+        var emergencyMirrorJson = JSON.stringify(emergencyMirror);
+        risqueTryWriteLocalStorageWithQuotaFallback(PUBLIC_MIRROR_KEY, emergencyMirrorJson);
+      }
       /* Host: TV applies income spreadsheet via risquePublicMirrorGameStateApply; host never did — paint here. */
       if (gs && risquePhaseIsIncomeVoiceMirror(gs.phase)) {
         try {
@@ -652,13 +779,6 @@
       }
     } catch (eMir) {
       /* ignore */
-    }
-    if (typeof window.risqueReplaySyncHostButton === "function") {
-      try {
-        window.risqueReplaySyncHostButton(gs);
-      } catch (eRepBtn) {
-        /* ignore */
-      }
     }
   };
 
@@ -1152,13 +1272,6 @@
         document.body.removeAttribute("data-risque-public-hide-cursor");
       }
       syncHostHudStatsColumnRetiredClass(gs);
-      if (!window.risqueDisplayIsPublic && typeof window.risqueReplaySyncHostButton === "function") {
-        try {
-          window.risqueReplaySyncHostButton(gs);
-        } catch (eReplayUi) {
-          /* ignore */
-        }
-      }
     } catch (eAttr) {
       /* ignore */
     }
@@ -2050,10 +2163,6 @@
 
   function risquePublicRenderMapForBook(gs) {
     if (!window.gameUtils || !gs) return;
-    if (gs.risqueReplayPlaybackActive) {
-      window.gameUtils.renderTerritories(null, gs);
-      return;
-    }
     if (
       !window.risqueDisplayIsPublic ||
       !_pubBook.displayTroopMap ||
@@ -3023,12 +3132,6 @@
 
   function risquePublicBookSequenceOnIncomingState(gs) {
     if (!gs) return;
-    if (gs.risqueReplayPlaybackActive) {
-      if (_pubBook.seq != null || _pubBook.displayTroopMap) {
-        resetPublicBookSequence();
-      }
-      return;
-    }
     var procEarly = gs.risquePublicBookProcessing;
     if (procEarly && Array.isArray(procEarly.steps) && procEarly.steps.length > 0) {
       risquePublicClearStaticRecapAckTimer();
@@ -4438,14 +4541,6 @@
         : [];
     }
     window.gameState = gs;
-    /* Public TV: replay round pill reads risqueReplayHudRound; mirror also sends risquePublicReplayRound. */
-    if (gs && gs.risqueReplayPlaybackActive && gs.risquePublicReplayRound != null) {
-      var rrIn = gs.risquePublicReplayRound;
-      var nIn = typeof rrIn === "number" ? rrIn : parseInt(rrIn, 10);
-      if (isFinite(nIn) && nIn >= 1) {
-        gs.risqueReplayHudRound = nIn;
-      }
-    }
     /* Keep boot `state` in sync so a late refreshVisuals() rAF cannot wipe mirror-only fields (e.g. name-roulette flash). */
     if (window.risqueDisplayIsPublic) {
       state = gs;
@@ -4453,17 +4548,6 @@
     syncPhaseDataAttr(gs);
     if (window.risqueDisplayIsPublic) {
       risquePublicSyncLoginFadeOverlay(gs);
-    }
-    /* Instant replay elimination overlay: run before gameUtils early-return so TV always gets it. */
-    if (
-      window.risqueDisplayIsPublic &&
-      typeof window.risquePublicApplyReplayEliminationSplashMirror === "function"
-    ) {
-      try {
-        window.risquePublicApplyReplayEliminationSplashMirror(gs);
-      } catch (eRepSplash) {
-        /* ignore */
-      }
     }
     if (!window.gameUtils) {
       if (window.risqueDisplayIsPublic) {
@@ -4492,26 +4576,12 @@
         } catch (eTallyEarly) {
           /* ignore */
         }
-        if (
-          gs &&
-          gs.risqueReplayPlaybackActive &&
-          typeof window.risqueReplaySyncRoundHudFromState === "function"
-        ) {
-          try {
-            window.risqueReplaySyncRoundHudFromState(gs);
-          } catch (eReplayRoundHudEarly) {
-            /* ignore */
-          }
-        }
       }
       return;
     }
     try {
       maybeEnsureRuntimeHud(gs);
-      var pubRedraw =
-        !window.risqueDisplayIsPublic ||
-        !_pubBook.skipTerritoryRedraw ||
-        !!gs.risqueReplayPlaybackActive;
+      var pubRedraw = !window.risqueDisplayIsPublic || !_pubBook.skipTerritoryRedraw;
       if (pubRedraw) {
         if (window.risqueDisplayIsPublic) {
           var dealPopTv = "";
@@ -4536,13 +4606,6 @@
       window.gameUtils.renderStats(gs);
     } catch (eR) {
       /* ignore */
-    }
-    if (typeof window.risqueReplaySyncRoundHudFromState === "function") {
-      try {
-        window.risqueReplaySyncRoundHudFromState(gs);
-      } catch (eReplayRoundHud) {
-        /* ignore */
-      }
     }
     if (
       window.risqueDisplayIsPublic &&
@@ -4651,13 +4714,6 @@
         try {
           window.risquePhases.login.applyPublicLoginFormMirror(gs);
         } catch (eLM) {
-          /* ignore */
-        }
-      }
-      if (String(gs.phase || "") === "postgame" && typeof window.risqueReplaySyncHostButton === "function") {
-        try {
-          window.risqueReplaySyncHostButton(gs);
-        } catch (eRepSync) {
           /* ignore */
         }
       }
@@ -5219,15 +5275,40 @@
     if (!gs || window.risqueDisplayIsPublic) return;
     var targetMode = hasRoundAutosaveDiskTarget() ? "disk-folder" : "browser-download";
     var row = null;
+    var snapshotJson = "";
+    var replayPack = null;
     try {
+      var forSave = gs;
+      try {
+        if (typeof window.risqueStripReplayFromGameStateClone === "function") {
+          forSave = window.risqueStripReplayFromGameStateClone(gs);
+        }
+      } catch (eStripRound) {
+        forSave = gs;
+      }
+      snapshotJson = JSON.stringify(forSave);
+      try {
+        replayPack =
+          typeof window.risqueBuildRoundReplayExport === "function"
+            ? window.risqueBuildRoundReplayExport(gs, Number(gs.round) || 1)
+            : null;
+      } catch (eRep) {
+        replayPack = null;
+      }
       row = {
         at: Date.now(),
         round: Number(gs.round) || 1,
         phase: String(gs.phase || ""),
         currentPlayer: String(gs.currentPlayer || ""),
-        state: JSON.stringify(gs),
+        stateRef: null,
+        stateBytes: snapshotJson.length || 0,
         mode: targetMode
       };
+      row.stateRef = sidecarPut("roundAutosaveState", snapshotJson, {
+        round: row.round,
+        phase: row.phase,
+        currentPlayer: row.currentPlayer
+      });
       var arr = tryParse(localStorage.getItem(ROUND_AUTOSAVE_KEY) || "[]");
       if (!Array.isArray(arr)) arr = [];
       arr.push(row);
@@ -5235,6 +5316,11 @@
         arr = arr.slice(arr.length - MAX_ROUND_AUTOSAVES);
       }
       localStorage.setItem(ROUND_AUTOSAVE_KEY, JSON.stringify(arr));
+      var keepRefs = {};
+      arr.forEach(function (r) {
+        if (r && r.stateRef) keepRefs[String(r.stateRef)] = true;
+      });
+      sidecarPrune("roundAutosaveState", MAX_ROUND_AUTOSAVES + 2, keepRefs);
       setRoundAutosaveStatus(Number(row.round) || 1, row.at, row.mode);
       setRoundAutosaveSessionCount(Number(row.round) || 0);
     } catch (eAuto) {
@@ -5251,22 +5337,22 @@
       Promise.resolve(writeRoundAutosaveToDisk(gs))
         .then(function (ok) {
           if (ok) return;
-          if (!row || !row.state) return;
+          if (!row || !snapshotJson) return;
           row.mode = "browser-download";
           setRoundAutosaveStatus(Number(row.round) || 1, row.at, row.mode);
-          exportBrowserRoundAutosaveJson(row);
+          exportBrowserRoundAutosaveJson(row, snapshotJson, replayPack);
         })
         .catch(function () {
-          if (!row || !row.state) return;
+          if (!row || !snapshotJson) return;
           row.mode = "browser-download";
           setRoundAutosaveStatus(Number(row.round) || 1, row.at, row.mode);
-          exportBrowserRoundAutosaveJson(row);
+          exportBrowserRoundAutosaveJson(row, snapshotJson, replayPack);
         });
       return;
     }
     try {
-      if (row && row.state) {
-        exportBrowserRoundAutosaveJson(row);
+      if (row && snapshotJson) {
+        exportBrowserRoundAutosaveJson(row, snapshotJson, replayPack);
       }
     } catch (eExport) {
       /* ignore */
@@ -5295,8 +5381,53 @@
     saveRoundAutosaveSnapshot(saveGs);
   };
 
-  function exportBrowserRoundAutosaveJson(row) {
-    if (!row || !row.state) return;
+  function exportBrowserRoundReplayPackJson(row, replayPack) {
+    if (!row || !replayPack || replayPack.format !== "risque-replay-v1") return;
+    var d = new Date(Number(row.at) || Date.now());
+    var datePart = d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+    var rawName =
+      "RISQUE  round " +
+      (Number(row.round) || 1) +
+      "  " +
+      datePart +
+      "  " +
+      formatRisque12HourAmPm(d) +
+      "  replay tape";
+    var base = sanitizeRisqueSaveBasename(rawName);
+    if (!base) base = "RISQUE-round-" + String(Number(row.round) || 1) + "-replay-tape";
+    var fname = risqueSaveBasenameForFilename(base) + "-replay.json";
+    var json;
+    try {
+      json = JSON.stringify(replayPack);
+    } catch (eS) {
+      return;
+    }
+    var blob = new Blob([json], { type: "application/json" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = fname;
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () {
+      URL.revokeObjectURL(url);
+    }, 1000);
+    logEvent("Round autosave: exported replay pack JSON", { file: fname });
+  }
+
+  function exportBrowserRoundAutosaveJson(row, stateJsonOpt, replayPackOpt) {
+    if (!row) return;
+    var stateJson =
+      stateJsonOpt != null && stateJsonOpt !== ""
+        ? String(stateJsonOpt)
+        : row.stateRef
+          ? sidecarGet("roundAutosaveState", row.stateRef)
+          : row.state != null
+            ? String(row.state)
+            : "";
+    if (!stateJson) return;
     var d = new Date(Number(row.at) || Date.now());
     var datePart = d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
     var rawName =
@@ -5310,7 +5441,7 @@
     var base = sanitizeRisqueSaveBasename(rawName);
     if (!base) base = "RISQUE-round-" + String(Number(row.round) || 1) + "-browser-backup";
     var fname = risqueSaveBasenameForFilename(base) + ".json";
-    var blob = new Blob([row.state], { type: "application/json" });
+    var blob = new Blob([stateJson], { type: "application/json" });
     var url = URL.createObjectURL(blob);
     var a = document.createElement("a");
     a.href = url;
@@ -5322,8 +5453,13 @@
     setTimeout(function () {
       URL.revokeObjectURL(url);
     }, 1000);
-    setBoardCornerMsg("Round autosave: exported JSON browser backup.");
+    setBoardCornerMsg("Round autosave: exported game JSON (+ replay tape if recorded).");
     logEvent("Round autosave: exported browser backup JSON", { file: fname });
+    if (replayPackOpt && replayPackOpt.format === "risque-replay-v1") {
+      setTimeout(function () {
+        exportBrowserRoundReplayPackJson(row, replayPackOpt);
+      }, 400);
+    }
   }
 
   function removeRoundAutosaveSetupOverlay() {
@@ -5488,7 +5624,24 @@
       base = "RISQUE-round-" + String(Number(gs.round) || 1);
     }
     var fname = risqueSaveBasenameForFilename(base) + ".json";
-    var payload = JSON.stringify(gs, null, 2);
+    var forDisk = gs;
+    try {
+      if (typeof window.risqueStripReplayFromGameStateClone === "function") {
+        forDisk = window.risqueStripReplayFromGameStateClone(gs);
+      }
+    } catch (eStripDisk) {
+      forDisk = gs;
+    }
+    var payload = JSON.stringify(forDisk, null, 2);
+    var replayPack = null;
+    try {
+      replayPack =
+        typeof window.risqueBuildRoundReplayExport === "function"
+          ? window.risqueBuildRoundReplayExport(gs, Number(gs.round) || 1)
+          : null;
+    } catch (eRp) {
+      replayPack = null;
+    }
     return dir
       .getFileHandle(fname, { create: true })
       .then(function (fh) {
@@ -5502,7 +5655,31 @@
       })
       .then(function () {
         logEvent("Round autosave: wrote file", { file: fname });
-        return true;
+        if (!replayPack || replayPack.format !== "risque-replay-v1") {
+          return true;
+        }
+        var rfname = risqueSaveBasenameForFilename(base) + "-replay.json";
+        var rjson;
+        try {
+          rjson = JSON.stringify(replayPack, null, 2);
+        } catch (eJ) {
+          return true;
+        }
+        return dir
+          .getFileHandle(rfname, { create: true })
+          .then(function (rfh) {
+            return rfh.createWritable();
+          })
+          .then(function (rw) {
+            var rwr = rw.write(rjson);
+            return Promise.resolve(rwr).then(function () {
+              return rw.close();
+            });
+          })
+          .then(function () {
+            logEvent("Round autosave: wrote replay file", { file: rfname });
+            return true;
+          });
       })
       .catch(function (err) {
         logEvent("Round autosave: disk write failed", {
@@ -6008,6 +6185,20 @@
             });
           }
         })();
+        if (
+          !window.risqueDisplayIsPublic &&
+          state &&
+          String(state.phase || "") === "attack" &&
+          typeof window.risqueSyncAttackPhaseActionLocks === "function"
+        ) {
+          requestAnimationFrame(function () {
+            try {
+              window.risqueSyncAttackPhaseActionLocks();
+            } catch (eAtkChrome) {
+              /* ignore */
+            }
+          });
+        }
         if (state && state.risqueGameWinImmediate && state.winner) {
           if (typeof window.risqueMountImmediateGameWinOverlay === "function") {
             try {
@@ -6189,9 +6380,38 @@
    * starts in Downloads when supported; otherwise prompt + download (browser default folder is usually Downloads).
    */
   function saveGameSnapshotToFile(gameStateObj) {
-    var payload = JSON.stringify(gameStateObj, null, 2);
+    var forSave = gameStateObj;
+    try {
+      if (typeof window.risqueStripReplayFromGameStateClone === "function") {
+        forSave = window.risqueStripReplayFromGameStateClone(gameStateObj);
+      }
+    } catch (eFs) {
+      forSave = gameStateObj;
+    }
+    var payload = JSON.stringify(forSave, null, 2);
+    var replayPack = null;
+    try {
+      replayPack =
+        typeof window.risqueBuildRoundReplayExport === "function"
+          ? window.risqueBuildRoundReplayExport(
+              gameStateObj,
+              Number(gameStateObj && gameStateObj.round) || 1
+            )
+          : null;
+    } catch (eRp) {
+      replayPack = null;
+    }
     var defaultBase = defaultRisqueSaveBasename();
     var suggestedFile = risqueSaveBasenameForFilename(defaultBase) + ".json";
+
+    function maybeDownloadReplayPack(cleanBasenameNoExt) {
+      if (!replayPack || replayPack.format !== "risque-replay-v1" || !cleanBasenameNoExt) return;
+      try {
+        triggerJsonFileDownload(JSON.stringify(replayPack, null, 2), cleanBasenameNoExt + "-replay.json");
+      } catch (eRdl) {
+        /* ignore */
+      }
+    }
 
     function promptThenDownload() {
       return new Promise(function (resolve) {
@@ -6212,6 +6432,7 @@
         }
         try {
           triggerJsonFileDownload(payload, clean + ".json");
+          maybeDownloadReplayPack(clean);
           resolve({ ok: true, usedPicker: false });
         } catch (eDl) {
           resolve({ ok: false });
@@ -6243,7 +6464,35 @@
         });
       })
       .then(function () {
-        return { ok: true, usedPicker: true };
+        if (!replayPack || replayPack.format !== "risque-replay-v1") {
+          return { ok: true, usedPicker: true };
+        }
+        var replaySuggested = risqueSaveBasenameForFilename(defaultBase) + "-replay.json";
+        return window
+          .showSaveFilePicker({
+            suggestedName: replaySuggested,
+            startIn: "downloads",
+            types: [
+              {
+                description: "RISQUE replay tape",
+                accept: { "application/json": [".json"] }
+              }
+            ]
+          })
+          .then(function (h2) {
+            return h2.createWritable().then(function (writable2) {
+              var w2 = writable2.write(JSON.stringify(replayPack, null, 2));
+              return Promise.resolve(w2).then(function () {
+                return writable2.close();
+              });
+            });
+          })
+          .then(function () {
+            return { ok: true, usedPicker: true };
+          })
+          .catch(function () {
+            return { ok: true, usedPicker: true };
+          });
       })
       .catch(function (ePick) {
         if (ePick && ePick.name === "AbortError") {
@@ -6660,9 +6909,10 @@
       "</div>" +
       '<div id="risque-board-corner-msg" class="risque-board-corner-msg" aria-live="polite"></div>' +
       "</div>" +
-      '<div class="risque-board-corner-bottom" role="navigation" aria-label="Documentation">' +
+      '<div class="risque-board-corner-bottom" role="navigation" aria-label="Documentation and replay">' +
       '<button type="button" id="risque-board-manual" class="risque-board-op-btn">MANUAL</button>' +
       '<button type="button" id="risque-board-help" class="risque-board-op-btn">HELP</button>' +
+      '<button type="button" id="risque-board-replay-machine" class="risque-board-op-btn" title="Open the Wayback replay machine in a new window (*-replay.json tapes)">REPLAY</button>' +
       '<div id="risque-board-round-save-status" class="risque-board-round-save-status" aria-live="polite">ROUND AUTOSAVE: WAITING</div>' +
       "</div>" +
       '<input type="file" id="risque-board-load-input" accept=".json,.JSON" style="display:none" />';
@@ -6673,7 +6923,7 @@
       wrap.setAttribute("data-risque-corner-v", BOARD_CORNER_TOOLS_VERSION);
       wrap.setAttribute(
         "aria-label",
-        "New game, load game, save game, grace rollback, public board, hide row; manual, help, and round autosave status"
+        "New game, load game, save game, grace rollback, public board, hide row; manual, help, replay machine, and round autosave status"
       );
       wrap.innerHTML = cornerInner;
       canvas.appendChild(wrap);
@@ -6681,7 +6931,7 @@
       wrap.setAttribute("data-risque-corner-v", BOARD_CORNER_TOOLS_VERSION);
       wrap.setAttribute(
         "aria-label",
-        "New game, load game, save game, grace rollback, public board, hide row; manual, help, and round autosave status"
+        "New game, load game, save game, grace rollback, public board, hide row; manual, help, replay machine, and round autosave status"
       );
       wrap.innerHTML = cornerInner;
       boardCornerToolsWired = false;
@@ -6780,6 +7030,18 @@
     if (helpBtn) {
       helpBtn.addEventListener("click", function () {
         window.open(risqueDoc("help"), "_blank", "noopener,noreferrer");
+      });
+    }
+    var replayMachineBtn = document.getElementById("risque-board-replay-machine");
+    if (replayMachineBtn) {
+      replayMachineBtn.addEventListener("click", function () {
+        try {
+          var url = risqueDoc("replayMachine");
+          if (!url) url = "replay-machine.html";
+          window.open(url, "risqueReplayMachine", "noopener,noreferrer");
+        } catch (eRm) {
+          /* ignore */
+        }
       });
     }
     var graceBtn = document.getElementById("risque-board-grace");
@@ -6953,16 +7215,14 @@
     state = loadState();
   }
   if (!window.risqueDisplayIsPublic) {
-    if (typeof window.risqueReplayMergeTapeFromSidecar === "function") {
-      try {
-        window.risqueReplayMergeTapeFromSidecar(state);
-      } catch (eReplayMerge) {
-        /* ignore */
-      }
-    }
-  }
-  if (!window.risqueDisplayIsPublic) {
     restoreGraceCardplaySnapshotsFromStorage();
+  }
+  if (!window.risqueDisplayIsPublic && state && typeof window.risqueReplayFlattenEvents === "function") {
+    try {
+      window.risqueReplayFlattenEvents(state);
+    } catch (eMigReplay) {
+      /* ignore */
+    }
   }
   if (forcedPhase === "login") {
     loginMounted = false;

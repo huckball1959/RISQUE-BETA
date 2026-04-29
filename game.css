@@ -223,6 +223,24 @@ html.risque-view-host #error {
   gap: 0;
 }
 
+@keyframes risque-replay-battle-pulse {
+  0% {
+    stroke: #fbbf24;
+    stroke-width: 3px;
+    filter: drop-shadow(0 0 10px rgba(251, 191, 36, 0.95));
+  }
+  100% {
+    stroke: #000000;
+    stroke-width: 2px;
+    filter: none;
+  }
+}
+
+.svg-overlay circle.territory-circle.risque-replay-battle-flash {
+  transition: none;
+  animation: risque-replay-battle-pulse 0.2s ease-out forwards;
+}
+
 .hud-stats-panel {
   width: 100%;
   margin-bottom: 4px;
@@ -901,7 +919,7 @@ html.risque-view-public .runtime-hud-root.runtime-hud-root--public-cardplay-proc
   left: 25px;
   top: calc(1080px - 25px - 44px);
   display: grid;
-  grid-template-columns: auto auto minmax(220px, auto);
+  grid-template-columns: auto auto auto minmax(180px, 1fr);
   gap: var(--risque-corner-btn-gap);
   width: auto;
   max-width: calc(100% - 50px);
@@ -2927,6 +2945,52 @@ body.risque-view-host .risque-phase-content .deploy1-deploy-actions.deploy1-depl
   text-align: center;
   text-shadow: 0 0 22px rgba(251, 191, 36, 0.45);
   padding: 16px 20px;
+}
+
+/* Elimination: brief full-screen flash + sentence message (replay-machine.js). */
+@keyframes risque-replay-elim-flash-backdrop {
+  0% {
+    background: rgba(255, 255, 255, 0.88);
+  }
+  22% {
+    background: rgba(255, 235, 160, 0.62);
+  }
+  55% {
+    background: rgba(20, 15, 0, 0.78);
+  }
+  100% {
+    background: rgba(0, 0, 0, 0.72);
+  }
+}
+.risque-replay-splash--elimination {
+  animation: risque-replay-elim-flash-backdrop 1.05s ease-out forwards;
+}
+@keyframes risque-replay-elim-text-pop {
+  0% {
+    opacity: 0.35;
+    transform: scale(0.92);
+    filter: blur(2px);
+  }
+  35% {
+    opacity: 1;
+    transform: scale(1.06);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+}
+.risque-replay-splash-line--elimination {
+  max-width: min(92vw, 900px);
+  font-size: clamp(22px, 4.2vw, 44px);
+  letter-spacing: 0.02em;
+  color: #fffbeb;
+  text-shadow:
+    0 0 28px rgba(251, 191, 36, 0.75),
+    0 2px 12px rgba(0, 0, 0, 0.85);
+  animation: risque-replay-elim-text-pop 0.55s ease-out forwards;
 }
 
 /* Replay start: full vs first battle vs round (host) */
@@ -6898,11 +6962,6 @@ body.risque-view-host.runtime-page {
   display: none !important;
 }
 
-/* Public TV: battle replay is started on the host only — never show REPLAY on the TV strip. */
-html.risque-view-public .runtime-hud-root:not(.runtime-hud-root--login) #risque-host-instant-replay-btn {
-  display: none !important;
-}
-
 .risque-view-public input[type="file"] {
   display: none !important;
 }
@@ -6932,7 +6991,7 @@ html.risque-view-public .runtime-hud-root:not(.runtime-hud-root--login) #risque-
 /*
  * Do NOT set pointer-events:none on #ui-overlay here. The default (.ui-overlay { none } + .ui-overlay * { auto })
  * lets HUD children receive clicks; a public-only none!important on the overlay blocked ALL descendants
- * (including REPLAY) from hit-testing.
+ * from hit-testing.
  */
 html.risque-view-public .runtime-hud-root:not(.runtime-hud-root--login) #hud-banner-game-title {
   pointer-events: none !important;
@@ -8312,4 +8371,377 @@ html.risque-view-host .risque-grace-host-btn--danger {
   background: #7f1d1d;
   color: #fecaca;
   border-color: #450a0a;
+}
+
+/* Replay machine (replay-machine.html): Wayback UI uses the same host control panel chrome
+   (#runtime-hud-root + .attack-control-panel) as the live game — not a separate top toolbar. */
+body.replay-machine-page {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  max-height: 100vh;
+  height: 100vh;
+  min-height: 100dvh;
+  max-height: 100dvh;
+  height: 100dvh;
+  overflow: hidden;
+  background: #000;
+  overscroll-behavior: none;
+}
+body.replay-machine-page .runtime-shell {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  position: relative;
+}
+body.replay-machine-page .replay-stage-host {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  background: #000;
+  overflow: hidden;
+}
+/* #canvas is 1920px wide in layout; scale() does not shrink the box — clip so the page never gains a horizontal scrollbar. */
+body.replay-machine-page .replay-stage-host > #canvas.canvas-wrapper {
+  overflow: hidden;
+}
+/* Replay machine: never draw SVG/HTML stats over the map (core.js skips render; this hides any stray node). */
+body.replay-machine-page .svg-overlay #stats-group {
+  display: none !important;
+  pointer-events: none !important;
+}
+/* Replay HUD: base .runtime-hud-root is flex — replay page overrides to block in replay-machine.html (flex min-width:auto was blowing width past 800px). */
+/* Fixed to viewport so a tall column cannot extend the document and create a window scrollbar during playback. */
+body.replay-machine-page .runtime-hud-root.runtime-hud-root--replay-machine {
+  position: fixed !important;
+  display: block !important;
+  left: 50%;
+  top: 18px;
+  width: 800px !important;
+  /* Avoid 100vw — it ignores the vertical scrollbar and can introduce a stray horizontal gutter. */
+  max-width: min(800px, calc(100% - 24px)) !important;
+  min-width: 0 !important;
+  height: calc(100vh - 36px);
+  max-height: calc(100vh - 36px);
+  height: calc(100dvh - 36px);
+  max-height: calc(100dvh - 36px);
+  overflow-x: hidden !important;
+  overflow-y: hidden;
+  box-sizing: border-box;
+  transform: translateX(-50%);
+  z-index: 20;
+}
+body.replay-machine-page .runtime-hud-root--replay-machine #hud-main-panel.attack-control-panel {
+  max-width: 800px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  display: flex !important;
+  flex-direction: column !important;
+  box-sizing: border-box;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+}
+body.replay-machine-page .runtime-hud-root--replay-machine #risque-main-panel-body.risque-replay-machine-fill {
+  flex: 1 1 auto;
+  min-width: 0 !important;
+  max-width: 100%;
+  padding-top: 5px;
+}
+body.replay-machine-page .risque-replay-machine-fill {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+body.replay-machine-page .risque-replay-machine-fill::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+body.replay-machine-page .risque-replay-transport-row,
+body.replay-machine-page .risque-replay-tape-row {
+  max-width: 100%;
+  min-width: 0;
+}
+body.replay-machine-page .risque-replay-centered-stack {
+  width: 100%;
+  max-width: 480px;
+  margin-left: auto;
+  margin-right: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-sizing: border-box;
+}
+body.replay-machine-page .risque-replay-machine-brand {
+  text-align: center;
+  flex-shrink: 0;
+}
+body.replay-machine-page .risque-replay-machine-brand-the {
+  margin: 0;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.35em;
+  color: #00ff00;
+  text-transform: uppercase;
+}
+body.replay-machine-page .risque-replay-machine-brand-main {
+  margin: 4px 0 0;
+  font-family: "Courier New", Courier, monospace;
+  font-size: clamp(17px, 1.8vw, 22px);
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  color: #00ff00;
+  text-shadow: 0 0 10px rgba(0, 255, 0, 0.35);
+}
+body.replay-machine-page .risque-replay-file-row {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  flex-shrink: 0;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+body.replay-machine-page .risque-replay-file-input-native {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+}
+body.replay-machine-page .risque-replay-file-pick-btn {
+  font-family: "Courier New", Courier, monospace;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  padding: 10px 22px;
+  border: 2px solid #00ff00;
+  border-radius: 4px;
+  background: #061806;
+  color: #00ff00;
+  cursor: pointer;
+  box-shadow: 0 0 12px rgba(0, 255, 0, 0.2);
+}
+body.replay-machine-page .risque-replay-file-pick-btn:hover:not(:disabled) {
+  background: #0a240a;
+  box-shadow: 0 0 16px rgba(0, 255, 0, 0.35);
+}
+body.replay-machine-page .risque-replay-rounds-section {
+  width: 100%;
+  margin-top: 12px;
+  flex-shrink: 0;
+}
+body.replay-machine-page .risque-replay-rounds-section .risque-replay-file-panel-label {
+  text-align: center;
+}
+body.replay-machine-page .risque-replay-file-panel-label {
+  font-size: 13px;
+  font-weight: 800;
+  color: #00ff00;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  margin-bottom: 8px;
+  text-align: center;
+  font-family: "Courier New", Courier, monospace;
+}
+body.replay-machine-page .risque-replay-round-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  max-width: 100%;
+  min-height: 2.5rem;
+  box-sizing: border-box;
+}
+body.replay-machine-page .risque-replay-round-chips-empty {
+  font-family: "Courier New", Courier, monospace;
+  font-size: 18px;
+  font-weight: 700;
+  color: #00ff00;
+}
+body.replay-machine-page .risque-replay-round-chip {
+  font-family: "Courier New", Courier, monospace;
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1.2;
+  min-width: 2.6rem;
+  padding: 8px 12px;
+  color: #00ff00;
+  background: linear-gradient(180deg, #0a1f0a 0%, #051005 100%);
+  border: 2px solid #00ff00;
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow:
+    inset 0 1px 0 rgba(0, 255, 0, 0.12),
+    0 0 10px rgba(0, 255, 0, 0.18);
+}
+body.replay-machine-page .risque-replay-round-chip:hover {
+  background: linear-gradient(180deg, #0f2a0f 0%, #071807 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(0, 255, 0, 0.2),
+    0 0 16px rgba(0, 255, 0, 0.35);
+}
+body.replay-machine-page .risque-replay-round-playing-box {
+  margin-top: 14px;
+  width: 100%;
+  max-width: 100%;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border: 2px solid #00ff00;
+  border-radius: 4px;
+  padding: 8px 14px;
+  min-height: 44px;
+  box-sizing: border-box;
+}
+body.replay-machine-page .risque-replay-round-playing-label {
+  font-family: "Courier New", Courier, monospace;
+  font-size: 12px;
+  font-weight: 800;
+  color: #00ff00;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+}
+body.replay-machine-page .risque-replay-round-playing-num {
+  margin: 0;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 20px;
+  font-weight: 900;
+  color: #00ff00;
+  min-width: 2ch;
+  text-align: right;
+  line-height: 1;
+}
+body.replay-machine-page .risque-replay-transport-deck {
+  margin-top: 14px;
+  padding-top: 0;
+  flex-shrink: 0;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+body.replay-machine-page .risque-replay-transport-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+body.replay-machine-page .risque-replay-transport-btn {
+  flex: 0 1 auto;
+  min-width: 76px;
+  min-height: 44px;
+  padding: 8px 12px;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #00ff00;
+  background: linear-gradient(180deg, #0a1f0a 0%, #051005 100%);
+  border: 2px solid #00ff00;
+  border-radius: 4px;
+  cursor: pointer;
+  box-shadow:
+    inset 0 1px 0 rgba(0, 255, 0, 0.12),
+    0 0 14px rgba(0, 255, 0, 0.15);
+}
+body.replay-machine-page .risque-replay-transport-btn:hover:not(:disabled) {
+  background: linear-gradient(180deg, #0f2a0f 0%, #071807 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(0, 255, 0, 0.2),
+    0 0 20px rgba(0, 255, 0, 0.35);
+}
+body.replay-machine-page .risque-replay-transport-btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+body.replay-machine-page .risque-replay-tape-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+body.replay-machine-page .risque-replay-tape-row--speed {
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+}
+body.replay-machine-page .risque-replay-speed-label {
+  font-size: 14px;
+  color: #00ff00;
+  font-weight: 700;
+  font-family: "Courier New", Courier, monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+body.replay-machine-page .risque-replay-speed-slider {
+  width: min(100%, 380px);
+  height: 10px;
+  accent-color: #00ff00;
+  cursor: pointer;
+}
+body.replay-machine-page .risque-replay-status-line {
+  margin: 10px 0 0;
+  font-size: 15px;
+  color: #00ff00;
+  text-align: center;
+  line-height: 1.45;
+  flex-shrink: 0;
+  font-family: "Courier New", Courier, monospace;
+}
+body.replay-machine-page .risque-replay-status-line:empty {
+  display: none;
+  margin: 0;
+}
+body.replay-machine-page .risque-replay-ended-line {
+  margin: 12px 0 0;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.28em;
+  color: rgba(0, 255, 0, 0.55);
+  text-align: center;
+  line-height: 1.4;
+  flex-shrink: 0;
+  font-family: "Courier New", Courier, monospace;
+  text-transform: uppercase;
+  min-height: 1.4em;
+}
+body.replay-machine-page .risque-replay-ended-line:empty {
+  display: none;
+  margin: 0;
+  min-height: 0;
 }

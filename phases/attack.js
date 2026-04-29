@@ -1060,6 +1060,13 @@ function risqueStartConfirmSlotFlash() {
 
 function syncAttackPhaseActionLocks() {
   const gs = window.gameState;
+  if (window.gameUtils && typeof window.gameUtils.normalizeAerialWildcardCounters === 'function') {
+    try {
+      window.gameUtils.normalizeAerialWildcardCounters(gs);
+    } catch (eAerialNorm) {
+      /* ignore */
+    }
+  }
   const pending = gs && String(gs.attackPhase || '') === 'pending_transfer';
   const hasPair = !!(attacker && defender);
   const rollEl = document.getElementById('roll');
@@ -1077,13 +1084,19 @@ function syncAttackPhaseActionLocks() {
       : gs && gs.aerialAttackEligible
         ? 1
         : 0;
+  /* risqueAerialUnlockedAfterCombat is set after combat rolls and by init when uses>0 — early sync can run
+   * before init runs, so wildcard aerial (uses>=1, no combat yet) must still clear the grey state. */
   const aerialUnlocked = !!(gs && gs.risqueAerialUnlockedAfterCombat);
+  const aerialUnlockedForUi = aerialUnlocked || uses >= 1;
   const aerialBaseGrey =
-    !aerialUnlocked || isSelectingAerialSource || isSelectingAerialTarget || isAwaitingAerialConfirm;
+    !aerialUnlockedForUi || isSelectingAerialSource || isSelectingAerialTarget || isAwaitingAerialConfirm;
   if (aerialEl) aerialEl.disabled = !!pending || aerialBaseGrey || uses < 1;
   if (aerialEl2) aerialEl2.disabled = !!pending || aerialBaseGrey || uses < 2;
   if (reinforceEl) reinforceEl.disabled = !!pending;
 }
+
+/** Re-apply after {@link setAttackChromeInteractive}; HUD enablement must not override per-control locks. */
+window.risqueSyncAttackPhaseActionLocks = syncAttackPhaseActionLocks;
 
 function dismissPrompt(opts) {
   opts = opts || {};
@@ -5326,10 +5339,16 @@ function initAttackPhase(mountEpoch) {
 
     let aerialStateMigrated = false;
     if (gameState.aerialAttack === true) {
+      /* Legacy boolean only: preserve a use if the save already marked aerial eligible — do not grant from a bare `true` (corrupt / coerced flags). */
+      const hadLegacyEligible = !!gameState.aerialAttackEligible;
       gameState.aerialAttack = false;
-      if (window.gameUtils && typeof window.gameUtils.getAerialAttackUsesRemaining === 'function') {
-        if (window.gameUtils.getAerialAttackUsesRemaining(gameState) < 1) {
-          window.gameUtils.addAerialAttackUses(gameState, 1);
+      if (window.gameUtils && typeof window.gameUtils.setAerialAttackUsesRemaining === 'function') {
+        if (
+          hadLegacyEligible &&
+          window.gameUtils.getAerialAttackUsesRemaining &&
+          window.gameUtils.getAerialAttackUsesRemaining(gameState) < 1
+        ) {
+          window.gameUtils.setAerialAttackUsesRemaining(gameState, 1);
         }
       } else if (!gameState.aerialAttackEligible) {
         gameState.aerialAttackEligible = true;
@@ -5545,6 +5564,9 @@ function initAttackPhase(mountEpoch) {
     window.gameUtils.renderTerritories(null, window.gameState);
     renderAerialBridge();
     syncAttackPhaseActionLocks();
+    requestAnimationFrame(function () {
+      syncAttackPhaseActionLocks();
+    });
     window.__risqueAttackInitialized = true;
   });
 

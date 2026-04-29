@@ -1,6 +1,9 @@
 /**
  * Mock Game Maker — build gameState for RISQUE, export to localStorage / JSON file.
- * Depends on ../js/core.js (gameUtils).
+ * Depends on ../js/core.js (gameUtils), ../js/replay-tape.js (tape helpers / flatten).
+ *
+ * Exports are normalized to match current runtime expectations (replay tape v2, stamped rounds,
+ * Lucky ledger/session roster, stripped live-session keys) so JSON loads cleanly in game.html.
  */
 (function () {
   "use strict";
@@ -163,21 +166,48 @@
    * Same idea as risqueReplayHasTape (replay-tape.js): any replayable segment (deal, init, deploy, battle, elimination).
    * If true, export keeps that tape — no synthetic overwrite.
    */
+  function scanEventListForPlayback(ev) {
+    if (!ev || !ev.length) return false;
+    var i;
+    for (i = 0; i < ev.length; i++) {
+      var e = ev[i];
+      if (!e || !e.type) continue;
+      if (e.type === "init" && e.board) return true;
+      if (
+        e.type === "board" &&
+        e.board &&
+        (e.segment === "deal" || e.segment === "deploy" || e.segment === "battle" || e.segment === "reinforce")
+      ) {
+        return true;
+      }
+      if (e.type === "elimination") return true;
+    }
+    return false;
+  }
+
+  /**
+   * True if we should keep the embedded tape (v1/v2) instead of replacing with a synthetic one.
+   * Handles legacy flat {@link risqueReplayTape.events} and per-round {@link risqueReplayByRound}.
+   */
   function existingTapeHasBattlePlayback(gs) {
     try {
-      var t = gs && gs.risqueReplayTape;
-      if (!t || (t.v !== 1 && t.v !== REPLAY_TAPE_VERSION) || !t.events || !t.events.length) return false;
-      var i;
-      var ev = t.events;
-      for (i = 0; i < ev.length; i++) {
-        var e = ev[i];
-        if (!e || !e.type) continue;
-        if (e.type === "init" && e.board) return true;
-        if (e.type === "board" && e.board && (e.segment === "deal" || e.segment === "deploy" || e.segment === "battle"))
-          return true;
-        if (e.type === "elimination") return true;
+      var ev = typeof window.risqueReplayFlattenEvents === "function" ? window.risqueReplayFlattenEvents(gs) : null;
+      if (ev && ev.length && scanEventListForPlayback(ev)) return true;
+      if (!ev || !ev.length) {
+        var br = gs && gs.risqueReplayByRound;
+        if (br && typeof br === "object") {
+          var keys = Object.keys(br);
+          var ki;
+          for (ki = 0; ki < keys.length; ki++) {
+            var bucket = br[keys[ki]];
+            if (scanEventListForPlayback(bucket)) return true;
+          }
+        }
+        var t = gs && gs.risqueReplayTape;
+        if (!t || (t.v !== 1 && t.v !== REPLAY_TAPE_VERSION) || !t.events || !t.events.length) return false;
+        ev = t.events;
       }
-      return false;
+      return scanEventListForPlayback(ev);
     } catch (err) {
       return false;
     }
@@ -301,7 +331,149 @@
       pushBattle(finalBoard);
     }
 
-    return { v: REPLAY_TAPE_VERSION, openingRecorded: true, events: events };
+    stampSyntheticTapeEventRounds(events, gs && gs.round);
+    return {
+      v: REPLAY_TAPE_VERSION,
+      openingRecorded: true,
+      hasDealFrames: false,
+      events: events
+    };
+  }
+
+  /** Match replay-tape stampRound — every exported tape event carries {@link round}. */
+  function stampSyntheticTapeEventRounds(events, roundRaw) {
+    var r = typeof roundRaw === "number" ? roundRaw : parseInt(roundRaw, 10);
+    var rn = isFinite(r) && r >= 1 ? Math.floor(r) : 1;
+    var i;
+    for (i = 0; i < events.length; i++) {
+      var e = events[i];
+      if (e && typeof e === "object") e.round = rn;
+    }
+  }
+
+  /**
+   * Strip keys that must not ship in a cold-load save (live replay UI, migrated buckets).
+   * Keeps {@link risqueReplayTape} — caller sets or replaces it afterward.
+   */
+  function stripMgmExportLiveReplayKeys(gs) {
+    if (!gs || typeof gs !== "object") return;
+    delete gs.risqueReplayPlaybackActive;
+    delete gs.risqueReplayHudRound;
+    delete gs.risqueReplayBattleFlashLabels;
+    delete gs.risquePublicReplayRound;
+    delete gs.risquePublicReplayEliminationSplash;
+    delete gs.phaseReplayIndex;
+    delete gs.risqueReplayMachineHudPhase;
+  }
+
+  /** Defaults aligned with game-shell normalizeState so Login load + runtime phases behave. */
+  function ensureMgmExportShellDefaults(gs) {
+    if (!gs || typeof gs !== "object") return;
+    if (!Array.isArray(gs.risquePlayedCardsGallery)) gs.risquePlayedCardsGallery = [];
+    if (!gs.risqueLuckyLedger || typeof gs.risqueLuckyLedger !== "object") {
+      gs.risqueLuckyLedger = { byPlayer: {} };
+    }
+    if (typeof gs.risqueLuckyLedger.byPlayer !== "object" || gs.risqueLuckyLedger.byPlayer === null) {
+      gs.risqueLuckyLedger.byPlayer = {};
+    }
+    (gs.players || []).forEach(function (p) {
+      var nm = p && p.name ? String(p.name) : "";
+      if (!nm) return;
+      if (!gs.risqueLuckyLedger.byPlayer[nm]) {
+        gs.risqueLuckyLedger.byPlayer[nm] = {
+          dice: 0,
+          sixes: 0,
+          roundWins: 0,
+          roundLosses: 0,
+          roundTies: 0
+        };
+      }
+    });
+    if (!Array.isArray(gs.risqueLuckySessionRoster) || !gs.risqueLuckySessionRoster.length) {
+      var roster = [];
+      var seen = {};
+      function push(nm) {
+        if (!nm || seen[nm]) return;
+        seen[nm] = true;
+        roster.push(nm);
+      }
+      var ti;
+      for (ti = 0; ti < (gs.turnOrder || []).length; ti++) {
+        if (gs.turnOrder[ti]) push(String(gs.turnOrder[ti]));
+      }
+      for (ti = 0; ti < (gs.players || []).length; ti++) {
+        var pr = gs.players[ti] && gs.players[ti].name;
+        if (pr) push(String(pr));
+      }
+      Object.keys(gs.risqueLuckyLedger.byPlayer || {}).forEach(function (k) {
+        if (k) push(String(k));
+      });
+      if (roster.length) gs.risqueLuckySessionRoster = roster;
+    }
+    if (gs.setupComplete === true && gs.risqueHostHudStatsColumnRetired == null) {
+      var ph = String(gs.phase || "");
+      var retire = {
+        income: 1,
+        "con-income": 1,
+        cardplay: 1,
+        "con-cardplay": 1,
+        attack: 1,
+        reinforce: 1,
+        receivecard: 1,
+        getcard: 1,
+        deploy: 1,
+        conquer: 1,
+        "con-cardtransfer": 1,
+        "con-deploy": 1,
+        "con-receivecard": 1,
+        "con-transfertroops": 1
+      };
+      if (retire[ph]) gs.risqueHostHudStatsColumnRetired = true;
+    }
+  }
+
+  /** Session key + player color map for replay tape consumers (instant replay + replay machine). */
+  function ensureMgmReplayTapeSidecar(gs) {
+    if (!gs || typeof gs !== "object") return;
+    if (!gs.risqueReplayTapeSessionKey) {
+      gs.risqueReplayTapeSessionKey =
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : "rsq-" + String(Date.now()) + "-" + String(Math.floor(Math.random() * 1e9));
+    }
+    var m = {};
+    (gs.players || []).forEach(function (p) {
+      if (!p || !p.name || p.color == null || String(p.color).trim() === "") return;
+      m[String(p.name)] = String(p.color).trim().toLowerCase();
+    });
+    gs.risqueReplayPlayerColors = m;
+    var tape = gs.risqueReplayTape;
+    if (tape && typeof tape === "object") {
+      if (typeof tape.hasDealFrames !== "boolean") {
+        tape.hasDealFrames = !!(
+          tape.events &&
+          tape.events.some(function (e) {
+            return e && e.type === "board" && e.segment === "deal";
+          })
+        );
+      }
+      if (tape.v !== 1 && tape.v !== REPLAY_TAPE_VERSION) {
+        tape.v = REPLAY_TAPE_VERSION;
+      }
+    }
+  }
+
+  /** Transient flags that should never survive an MGM export (mirror / pulse / TV scratch). */
+  function stripMgmExportVolatileRuntimeKeys(gs) {
+    if (!gs || typeof gs !== "object") return;
+    delete gs.risqueTransferPulse;
+    delete gs.risqueBattleLossFlashLabels;
+    delete gs.risquePublicPlayerSelectFlash;
+    delete gs.risquePublicDealPopTerritory;
+    delete gs.risqueMirrorDeployRouteHint;
+    delete gs.risqueDeferConquerElimination;
+    delete gs.risqueConquestFlowActive;
+    delete gs.risquePublicConquestCelebrationHtml;
   }
 
   function el(id) {
@@ -934,7 +1106,12 @@
       acquiredTerritory: null,
       minTroopsToTransfer: 0,
       transferredCardCount: 0,
-      pendingNewContinents: []
+      pendingNewContinents: [],
+      risquePlayedCardsGallery: [],
+      risqueLuckyLedger: { byPlayer: {} },
+      risqueLuckySessionRoster: playerDefs.map(function (d) {
+        return d.name;
+      })
     };
     return gs;
   }
@@ -1506,12 +1683,18 @@
     copy.setupComplete = true;
     stripMockMakerEphemeralFields(copy);
     attachIncomeBreakdownForIncomeExport(copy);
-    if (!existingTapeHasBattlePlayback(copy)) {
-      var tape = buildSyntheticReplayTape(copy);
-      if (tape) {
-        copy.risqueReplayTape = tape;
+    ensureMgmExportShellDefaults(copy);
+    stripMgmExportVolatileRuntimeKeys(copy);
+    var keepImportedTape = existingTapeHasBattlePlayback(copy);
+    stripMgmExportLiveReplayKeys(copy);
+    if (!keepImportedTape) {
+      var tapeOut = buildSyntheticReplayTape(copy);
+      if (tapeOut) {
+        copy.risqueReplayTape = tapeOut;
+        delete copy.risqueReplayByRound;
       }
     }
+    ensureMgmReplayTapeSidecar(copy);
     return { payload: copy, startMeta: meta };
   }
 

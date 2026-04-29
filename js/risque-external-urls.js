@@ -1,5 +1,5 @@
 /**
- * Single map for paths relative to the site root (game.html, index.html, docs/manual.html, docs/help.html).
+ * Single map for paths relative to the site root (game.html, index.html, replay-machine.html, docs/…).
  * Runtime phases should use game.html?phase=… only; this file is for launcher, manual/help tabs,
  * and future migration off standalone conquer/win pages.
  *
@@ -32,7 +32,8 @@
     help: "docs/help.html",
     conquer: "game.html?phase=conquer",
     win: "win.html",
-    loginRecovery: LOGIN_RECOVERY
+    loginRecovery: LOGIN_RECOVERY,
+    replayMachine: "replay-machine.html"
   };
 
   window.risqueResolveDocUrl = function (name) {
