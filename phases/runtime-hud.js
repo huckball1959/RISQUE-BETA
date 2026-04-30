@@ -88,7 +88,6 @@
           "</div></div></div>" +
           "</div>" +
           '<button id="new-attack" class="attack-ctl-btn attack-ctl-new" type="button" title="Cancel all attacks">CLEAR</button>' +
-          '<button id="reinforce" class="attack-ctl-btn attack-ctl-reinforce" type="button" title="Reinforcement phase">REINFORCE</button>' +
           '<div id="aerial-attack-group">' +
             '<button id="aerial-attack" class="attack-ctl-btn attack-ctl-aerial" type="button" title="First aerial bridge (wildcard)">AERIAL</button>' +
             '<button id="aerial-attack-2" class="attack-ctl-btn attack-ctl-aerial" type="button" title="Second aerial bridge (wildcard)">AERIAL</button>' +
@@ -134,7 +133,10 @@
         "</div>" +
         "</div>" +
       "</div>" +
-      '<div id="log-text" class="ucp-terminal ucp-combat-log" aria-live="polite"></div>'
+      '<div id="log-text" class="ucp-terminal ucp-combat-log" aria-live="polite"></div>' +
+      '<div class="attack-reinforce-footer" role="group" aria-label="Reinforcement phase">' +
+      '<button id="reinforce" class="attack-ctl-btn attack-ctl-reinforce" type="button" title="Reinforcement phase">REINFORCE</button>' +
+      "</div>"
     );
   }
 
@@ -557,7 +559,23 @@
       rootEl.classList.toggle("runtime-hud-root--public-cardplay-processing-title", pubCardProc);
     }
     if (titleEl) {
-      titleEl.textContent = pubCardProc ? "CARD PROCESSING" : "RISQUE";
+      if (pubCardProc) {
+        var procPlayer = gs.players
+          ? gs.players.find(function (x) {
+              return x && x.name === gs.currentPlayer;
+            })
+          : null;
+        var procNameU = procPlayer && procPlayer.name ? String(procPlayer.name).toUpperCase() : "PLAYER";
+        var procColor = procPlayer ? window.gameUtils.colorMap[procPlayer.color] || "#ffffff" : "#ffffff";
+        titleEl.innerHTML =
+          '<span style="color:' +
+          escapeHtmlBanner(procColor) +
+          '">' +
+          escapeHtmlBanner(procNameU) +
+          '</span>-CARD PROCESSING';
+      } else {
+        titleEl.textContent = "RISQUE";
+      }
     }
     var phase = gs.phase || "";
     /* Public TV: mirror phase may be "income" while the committed-cardplay recap still runs — banner stays CardPlay until the book finishes. */

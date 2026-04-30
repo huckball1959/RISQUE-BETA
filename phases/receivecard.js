@@ -119,9 +119,13 @@
       t = "";
     }
     var totalLine = receiveCardHandCountLine();
+    var bookLine = receiveCardHasValidBook() ? "VALID BOOK AVAILABLE." : "";
     var report = totalLine;
     if (t) {
       report = t + "\n\n" + totalLine;
+    }
+    if (bookLine) {
+      report += "\n\n" + bookLine;
     }
     var el = document.getElementById("receivecard-compact-message");
     if (el) el.textContent = report;
@@ -256,6 +260,7 @@
      * Do not draw from the deck here: that would set cardAwardedThisTurn and block the real
      * post-reinforcement receive-card (same bug as “no deck card after eliminating a player”). */
     var conquestElimReview = !!(gs.risqueConquestElimReceiveCard && !window.risqueDisplayIsPublic);
+    var transferredCount = Math.max(0, Number(gs.transferredCardCount) || 0);
     var eligible =
       !!(gs.cardEarnedViaAttack || gs.cardEarnedViaCardplay) &&
       !gs.cardAwardedThisTurn &&
@@ -263,7 +268,7 @@
 
     if (conquestElimReview) {
       receiveCardSetMessage(
-        "Defeated player's cards are in your hand. Your capture deck card will be drawn after reinforcement."
+        "Defeated player's cards are in your hand (gold outline). Your capture deck card will be drawn after reinforcement."
       );
       drawnThisStep = null;
     } else if (eligible) {
@@ -288,12 +293,18 @@
     }
 
     handStrip.innerHTML = "";
-    currentPlayer.cards.forEach(function (card) {
+    var conquestStartIdx = Math.max(0, currentPlayer.cards.length - transferredCount);
+    currentPlayer.cards.forEach(function (card, idx) {
       var cardName = typeof card === "string" ? card : card.name;
       var img = document.createElement("img");
       img.className = "receivecard-thumb";
       if (drawnThisStep && cardName === drawnThisStep.name) {
         img.classList.add("receivecard-thumb-new");
+      } else {
+        img.classList.add("receivecard-thumb-existing");
+      }
+      if (conquestElimReview && transferredCount > 0 && idx >= conquestStartIdx) {
+        img.classList.add("receivecard-thumb-conquest");
       }
       img.src = "assets/images/Cards/" + String(cardName || "").toUpperCase() + ".webp";
       img.alt = cardName.replace(/_/g, " ");

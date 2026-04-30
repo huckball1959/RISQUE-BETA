@@ -2082,8 +2082,12 @@ html.risque-view-public .runtime-hud-root.runtime-hud-root--public-cardplay-proc
 }
 
 .risque-phase-content .cardplay-compact-root .card.selected {
-  border: 3px solid #facc15;
+  border: 4px solid #facc15;
   border-radius: 4px;
+  box-shadow:
+    0 0 0 3px rgba(250, 204, 21, 0.95),
+    0 0 22px rgba(250, 204, 21, 0.75);
+  transform: translateY(-4px) scale(1.03);
 }
 
 .risque-phase-content .cardplay-compact-root .card.processing {
@@ -3232,6 +3236,17 @@ body[data-risque-phase="postgame"] #risque-host-cards-in-hand-panel {
     0 0 18px rgba(239, 68, 68, 0.35);
 }
 
+.receivecard-thumb-existing {
+  opacity: 0.92;
+}
+
+.receivecard-thumb-conquest {
+  border-color: #facc15 !important;
+  box-shadow:
+    0 0 0 2px rgba(250, 204, 21, 0.95),
+    0 0 14px rgba(250, 204, 21, 0.65);
+}
+
 .risque-phase-content .receivecard-new-img {
   position: relative !important;
   left: auto !important;
@@ -3771,6 +3786,10 @@ html.risque-view-host
   z-index: 5;
 }
 
+.ucp-slot-strip.risque-confirm-slot-strip-flash {
+  animation: risque-confirm-slot-flash 0.75s ease-in-out infinite;
+}
+
 .attack-dice-columns {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -3962,6 +3981,40 @@ html.risque-view-host
   border-color: #64748b;
 }
 
+/* REINFORCE alone at bottom of host control panel (below voice, slots, log) */
+.attack-control-panel .risque-main-panel-body .attack-reinforce-footer {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: stretch;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 2px solid rgba(0, 255, 0, 0.35);
+}
+
+.attack-control-panel .risque-main-panel-body .attack-reinforce-footer .attack-ctl-reinforce {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 54px;
+  font-size: clamp(16px, 1.35vw, 20px);
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  border-width: 3px;
+  box-shadow: 0 0 18px rgba(0, 255, 0, 0.55);
+}
+
+/* Host: REINFORCE footer only during attack (advance to reinforcement). Hide during deal, deploy, income, receivecard, reinforce, cardplay, etc. */
+body.risque-view-host:not([data-risque-phase="attack"])
+  .attack-control-panel
+  .risque-main-panel-body
+  .attack-reinforce-footer {
+  display: none !important;
+}
+
 .attack-control-panel .attack-toolbar-strip {
   overflow: visible;
 }
@@ -4034,12 +4087,31 @@ html.risque-view-host
 }
 
 .attack-ctl-blitz:disabled,
+.attack-ctl-roll:disabled,
 .attack-ctl-aerial:disabled {
   background: #475569 !important;
   color: #94a3b8 !important;
   border-color: #334155 !important;
   cursor: not-allowed !important;
   opacity: 0.85;
+}
+
+@keyframes attack-campaign-choice-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 rgba(250, 204, 21, 0);
+    border-color: #3f3f3f;
+  }
+  50% {
+    box-shadow:
+      0 0 20px rgba(250, 204, 21, 0.75),
+      0 0 36px rgba(250, 204, 21, 0.35);
+    border-color: #facc15;
+  }
+}
+
+.attack-campaign-dropdown--needs-choice .attack-menu-tile {
+  animation: attack-campaign-choice-pulse 0.85s ease-in-out infinite;
 }
 
 .attack-blitz-wrap {
@@ -5362,6 +5434,11 @@ html.risque-view-public body[data-risque-phase="receivecard"] #control-voice.ucp
 /* Public TV: show dice readout like host; hide attack controls (no buttons on TV). */
 .risque-view-public #hud-attack-chrome .attack-toolbar-strip,
 .risque-view-public #hud-attack-chrome .attack-step-ctl-wrap {
+  display: none !important;
+}
+
+/* REINFORCE lives outside #hud-attack-chrome — keep it host-only on the mirror. */
+.risque-view-public .attack-reinforce-footer {
   display: none !important;
 }
 /* Dice on public TV only during attack (game-shell sets body[data-risque-show-public-dice="1"]). */
@@ -7418,7 +7495,7 @@ html.risque-view-public .runtime-hud-root:not(.runtime-hud-root--login) #hud-ban
   margin-bottom: 0;
   display: flex;
   flex-direction: row;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: flex-end;
   justify-content: center;
   gap: 10px;
@@ -7426,8 +7503,8 @@ html.risque-view-public .runtime-hud-root:not(.runtime-hud-root--login) #hud-ban
   min-height: 0;
   box-sizing: border-box;
   padding: 4px 2px 6px;
-  overflow-x: hidden;
-  overflow-y: visible;
+  overflow-x: auto;
+  overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -8076,6 +8153,16 @@ body.risque-view-host .cardplay-compact-root .cardplay-continue-income-wrap--hos
 .risque-view-public .risque-public-tv-bar {
   display: flex;
 }
+.risque-public-tv-bar[data-risque-pending-fullscreen]::after {
+  content: " · click once for fullscreen";
+  font-size: 14px;
+  font-weight: 800;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  color: #14532d;
+  margin-left: 6px;
+  white-space: nowrap;
+}
 
 .risque-public-tv-bar-label {
   font-size: 26px;
@@ -8085,6 +8172,30 @@ body.risque-view-host .cardplay-compact-root .cardplay-continue-income-wrap--hos
   color: #000000;
   line-height: 1.05;
   text-shadow: none;
+}
+
+/* Public TV: one-click browser fullscreen (F11-style) */
+.risque-public-fullscreen-btn {
+  margin: 0;
+  padding: 10px 16px;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #ecfdf5;
+  background: #14532d;
+  border: 2px solid #052e16;
+  border-radius: 10px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+.risque-public-fullscreen-btn:hover {
+  background: #166534;
+  color: #fff;
+}
+.risque-public-fullscreen-btn:focus-visible {
+  outline: 3px solid #14532d;
+  outline-offset: 2px;
 }
 
 .risque-public-login-hint-inner {
@@ -8597,9 +8708,29 @@ body.replay-machine-page .risque-replay-round-chip {
   border: 2px solid #00ff00;
   border-radius: 6px;
   cursor: pointer;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
   box-shadow:
     inset 0 1px 0 rgba(0, 255, 0, 0.12),
     0 0 10px rgba(0, 255, 0, 0.18);
+}
+body.replay-machine-page .risque-replay-round-chip-r {
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1.1;
+}
+body.replay-machine-page .risque-replay-round-chip-t {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.15;
+  opacity: 0.88;
+  letter-spacing: 0.02em;
+  max-width: 11rem;
+  text-align: center;
+  white-space: normal;
 }
 body.replay-machine-page .risque-replay-round-chip:hover {
   background: linear-gradient(180deg, #0f2a0f 0%, #071807 100%);

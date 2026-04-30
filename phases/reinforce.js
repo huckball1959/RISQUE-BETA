@@ -209,7 +209,7 @@ function refreshReinforceCompactHud() {
     return;
   }
   if (skip) skip.disabled = false;
-  if (reset) reset.disabled = false;
+  if (reset) reset.disabled = !(selectedSource || selectedDestination || troopPrompt);
   if (troopPrompt) {
     if (r1) r1.disabled = false;
     if (cm) cm.disabled = false;

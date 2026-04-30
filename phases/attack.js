@@ -234,6 +234,7 @@ function closeCampaignDropdown() {
   const btn = elements.campaign || document.getElementById('campaign');
   if (dd) {
     dd.hidden = true;
+    dd.classList.remove('attack-campaign-dropdown--needs-choice');
     dd.querySelectorAll('.attack-menu-row--open').forEach(r => r.classList.remove('attack-menu-row--open'));
   }
   if (btn) btn.setAttribute('aria-expanded', 'false');
@@ -254,6 +255,7 @@ function toggleCampaignDropdown(ev) {
   if (!dd) return;
   const opening = dd.hidden;
   dd.hidden = !opening;
+  dd.classList.toggle('attack-campaign-dropdown--needs-choice', opening);
   if (elements.campaign) elements.campaign.setAttribute('aria-expanded', opening ? 'true' : 'false');
 }
 
@@ -742,6 +744,13 @@ function checkPlayerElimination(defenderPlayer) {
   }
   logToStorage(`Player ${defenderPlayer.name} eliminated, ${transferredCards.length} cards transferred`);
   saveGameState();
+  if (typeof window.risqueRoundAutosaveOnGameWin === 'function') {
+    try {
+      window.risqueRoundAutosaveOnGameWin(window.gameState);
+    } catch (eWinSave) {
+      /* ignore */
+    }
+  }
   if (typeof window.risqueMirrorPushGameState === 'function') {
     window.risqueMirrorPushGameState();
   }
@@ -893,6 +902,13 @@ function checkWinCondition() {
     window.gameState.winner = window.gameState.currentPlayer;
     window.gameState.risqueGameWinImmediate = true;
     saveGameState();
+    if (typeof window.risqueRoundAutosaveOnGameWin === 'function') {
+      try {
+        window.risqueRoundAutosaveOnGameWin(window.gameState);
+      } catch (eWinSave2) {
+        /* ignore */
+      }
+    }
     logToStorage('Win condition met');
     if (typeof window.risqueMirrorPushGameState === 'function') {
       window.risqueMirrorPushGameState();
@@ -1041,6 +1057,8 @@ window.risqueEndAerialBridgeForTurn = function risqueEndAerialBridgeForTurn() {
 };
 
 function risqueStopConfirmSlotFlash() {
+  const strip = document.getElementById('ucp-slot-strip');
+  if (strip) strip.classList.remove('risque-confirm-slot-strip-flash');
   for (let i = 0; i < 6; i += 1) {
     const b = document.getElementById(`control-btn-${i}`);
     if (b) b.classList.remove('risque-confirm-slot-flash');
@@ -1049,13 +1067,8 @@ function risqueStopConfirmSlotFlash() {
 
 function risqueStartConfirmSlotFlash() {
   risqueStopConfirmSlotFlash();
-  for (let j = 0; j < 6; j += 1) {
-    const btn = document.getElementById(`control-btn-${j}`);
-    if (btn && String(btn.textContent || '').trim() === 'CONFIRM') {
-      btn.classList.add('risque-confirm-slot-flash');
-      return;
-    }
-  }
+  const strip = document.getElementById('ucp-slot-strip');
+  if (strip) strip.classList.add('risque-confirm-slot-strip-flash');
 }
 
 function syncAttackPhaseActionLocks() {
@@ -1075,7 +1088,7 @@ function syncAttackPhaseActionLocks() {
   const aerialEl = document.getElementById('aerial-attack');
   const aerialEl2 = document.getElementById('aerial-attack-2');
   const reinforceEl = document.getElementById('reinforce');
-  if (rollEl) rollEl.disabled = !!pending;
+  if (rollEl) rollEl.disabled = !!pending || !hasPair;
   if (blitzEl) blitzEl.disabled = !!pending || !hasPair;
   if (campaignEl) campaignEl.disabled = !!pending;
   const uses =
@@ -1778,7 +1791,6 @@ function scheduleAttackEliminatedProceedToConquerPrompt(attackerPlayer, defender
 /** Apply losses from snap and handle territory capture. Returns { conquered }. */
 function applyBattleRoundAfterRoll(snap, opts) {
   opts = opts && typeof opts === 'object' ? opts : {};
-  try {
   const skipBattleVoice = !!opts.skipBattleVoice;
   const skipLossFlash = !!opts.skipLossFlash;
   const instantBlitz = !!opts.instantBlitz;
@@ -1892,6 +1904,16 @@ function applyBattleRoundAfterRoll(snap, opts) {
       window.gameState.risqueInstantBlitzTransferUi = true;
     }
 
+    /* Record battle frame before elimination/win autosave — finally ran too late and last-roll replay was missing.
+       Campaign path records again after auto-transfer (board differs). */
+    if (!opts.campaignAutoTransfer && typeof window.risqueReplayRecordBattle === 'function') {
+      try {
+        window.risqueReplayRecordBattle(window.gameState);
+      } catch (eRep) {
+        /* ignore */
+      }
+    }
+
     if (opts.campaignAutoTransfer) {
       const pathLen = opts.campaignPathLength;
       const hopIdx = opts.campaignHopIndex;
@@ -1911,6 +1933,13 @@ function applyBattleRoundAfterRoll(snap, opts) {
       }
       window.gameUtils.renderTerritories(null, window.gameState);
       window.gameUtils.renderStats(window.gameState);
+      if (typeof window.risqueReplayRecordBattle === 'function') {
+        try {
+          window.risqueReplayRecordBattle(window.gameState);
+        } catch (eRepCamp) {
+          /* ignore */
+        }
+      }
       const eliminated = checkPlayerElimination(opponent);
       if (eliminated) {
         if (window.gameState.turnOrder.length === 1) {
@@ -1958,20 +1987,19 @@ function applyBattleRoundAfterRoll(snap, opts) {
     return { conquered: true };
   }
 
+  if (typeof window.risqueReplayRecordBattle === 'function') {
+    try {
+      window.risqueReplayRecordBattle(window.gameState);
+    } catch (eRep) {
+      /* ignore */
+    }
+  }
+
   hasAttacked = true;
   saveGameState();
   window.gameUtils.renderTerritories(null, window.gameState);
   window.gameUtils.renderStats(window.gameState);
   return { conquered: false };
-  } finally {
-    if (window.gameState && typeof window.risqueReplayRecordBattle === 'function') {
-      try {
-        window.risqueReplayRecordBattle(window.gameState);
-      } catch (eRep) {
-        /* ignore */
-      }
-    }
-  }
 }
 
 function clearPausableBlitzRoundTimers() {

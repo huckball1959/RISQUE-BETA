@@ -67,7 +67,7 @@
               </div>
               <div class="risque-replay-file-row">
                 <button type="button" id="risque-replay-file-pick" class="risque-replay-file-pick-btn">
-                  Choose rounds
+                  Load replay files
                 </button>
                 <input
                   type="file"
@@ -76,12 +76,12 @@
                   accept=".json,application/json"
                   multiple
                   tabindex="-1"
-                  aria-label="Choose replay round JSON files"
+                  aria-label="Choose one or more RQRP replay JSON files"
                 />
               </div>
               <div class="risque-replay-rounds-section" id="risque-replay-rounds-section">
-                <div class="risque-replay-file-panel-label">Rounds loaded</div>
-                <div id="risque-replay-file-list" class="risque-replay-round-chips" role="group" aria-label="Rounds on tape"></div>
+                <div class="risque-replay-file-panel-label">Segments (oldest save first — tap to jump)</div>
+                <div id="risque-replay-file-list" class="risque-replay-round-chips" role="group" aria-label="Replay segments by save time"></div>
               </div>
               <div class="risque-replay-round-playing-box" aria-label="Round playing">
                 <span class="risque-replay-round-playing-label">Round playing</span>
@@ -107,6 +107,6 @@
     </div>
   </div>
   <script src="js/core.js?v=replay-no-stats-play-gate-2026-04-28"></script>
-  <script src="js/replay-machine.js?v=replay-elimination-flash-2026-04-28"></script>
+  <script src="js/replay-machine.js?v=replay-autotime-2026-04-29"></script>
 </body>
 </html>

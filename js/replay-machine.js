@@ -12,6 +12,9 @@
   var MS_INIT = 80;
   var MS_DEAL = 95;
   var MS_REPLAY_START_HOLD = 450;
+  /** After a successful load, start playback automatically (pause with PAUSE or STOP). */
+  var AUTO_START_PLAYBACK_AFTER_LOAD = true;
+  var AUTO_START_DELAY_MS = 320;
 
   function tapeVersionOk(v) {
     var n = typeof v === "number" ? v : parseInt(v, 10);
@@ -43,34 +46,107 @@
     el.textContent = on ? "REPLAY ENDED" : "";
   }
 
+  /** Round label for merge / UI; falls back to first stamped event round in the tape. */
+  function effectiveReplayRoundFromPack(p) {
+    if (!p) return 0;
+    var rr = Number(p.replayRound != null ? p.replayRound : p.round) || 0;
+    if (rr >= 1) return rr;
+    var evs = p.tape && p.tape.events;
+    if (!Array.isArray(evs) || !evs.length) return 0;
+    var i;
+    var minR = 0;
+    for (i = 0; i < evs.length; i++) {
+      var er = getEventRound(evs[i]);
+      if (er != null && (minR === 0 || er < minR)) minR = er;
+    }
+    return minR;
+  }
+
+  function packSavedAtMs(p) {
+    var n = p && p.savedAt != null ? Number(p.savedAt) : 0;
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  }
+
+  function formatReplaySavedAtChip(ms) {
+    var n = packSavedAtMs({ savedAt: ms });
+    if (!n) return "—";
+    try {
+      return new Date(n).toLocaleString(undefined, {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit"
+      });
+    } catch (e) {
+      return "—";
+    }
+  }
+
+  /**
+   * Dedupe by replay round (newest savedAt wins), then concatenate in save-time order
+   * (oldest file first). Round chips / seek still use round numbers inside the tape.
+   */
   function mergeReplayPacks(packs) {
     if (!packs || !packs.length) return null;
     if (packs.length === 1) return packs[0];
-    var sorted = packs.slice().sort(function (a, b) {
-      var ra = Number(a.replayRound != null ? a.replayRound : a.round) || 0;
-      var rb = Number(b.replayRound != null ? b.replayRound : b.round) || 0;
-      return ra - rb;
-    });
-    var seenRound = {};
+    var byRound = {};
     var dupRounds = [];
+    packs.forEach(function (p) {
+      var rr = effectiveReplayRoundFromPack(p);
+      if (!rr) return;
+      var prev = byRound[rr];
+      var sav = packSavedAtMs(p);
+      var prevSav = prev ? packSavedAtMs(prev) : -1;
+      if (prev) {
+        dupRounds.push(rr);
+        if (sav >= prevSav) {
+          byRound[rr] = p;
+        }
+      } else {
+        byRound[rr] = p;
+      }
+    });
+    var roundNums = Object.keys(byRound)
+      .map(function (k) {
+        return Number(k);
+      })
+      .filter(function (n) {
+        return n > 0;
+      });
+    var survivors = roundNums.map(function (r) {
+      var pk = byRound[r];
+      return { pack: pk, rr: r, sav: packSavedAtMs(pk) };
+    });
+    survivors.sort(function (a, b) {
+      if (a.sav !== b.sav) return a.sav - b.sav;
+      return a.rr - b.rr;
+    });
+    var sorted = survivors.map(function (s) {
+      return s.pack;
+    });
+    var replayRoundOrder = survivors.map(function (s) {
+      return s.rr;
+    });
+    var rrMonotone = true;
+    var i;
+    for (i = 1; i < survivors.length; i++) {
+      if (survivors[i].rr < survivors[i - 1].rr) {
+        rrMonotone = false;
+        break;
+      }
+    }
     var events = [];
     var lastR = 0;
     var gaps = [];
-    var i;
     for (i = 0; i < sorted.length; i++) {
       var p = sorted[i];
-      var rr = Number(p.replayRound != null ? p.replayRound : p.round) || 0;
-      if (seenRound[rr]) {
-        dupRounds.push(rr);
-        continue;
-      }
-      seenRound[rr] = true;
+      var rr = survivors[i].rr;
       var te = p.tape && p.tape.events;
       if (te && te.length) {
         events = events.concat(te);
       }
       if (lastR > 0 && rr > lastR + 1) {
-        gaps.push("after " + lastR + " missing through " + (rr - 1));
+        gaps.push("jump from round " + lastR + " to " + rr);
       }
       lastR = rr;
     }
@@ -82,16 +158,25 @@
     });
     var skList = Object.keys(skSet);
     var warns = [];
-    if (dupRounds.length) warns.push("duplicate round files: " + dupRounds.join(", "));
-    if (gaps.length) warns.push("round gaps — playback may jump: " + gaps.join("; "));
-    if (skList.length > 1) warns.push("mixed sessionKey across files");
+    if (dupRounds.length) {
+      var uniqDup = [];
+      dupRounds.forEach(function (d) {
+        if (uniqDup.indexOf(d) === -1) uniqDup.push(d);
+      });
+      warns.push("Same round appeared in multiple files — kept the newest by save time: " + uniqDup.join(", "));
+    }
+    if (gaps.length) {
+      warns.push("Some rounds missing between segments: " + gaps.join("; ") + " (still playing what you loaded).");
+    }
+    if (!rrMonotone) {
+      warns.push("Save-time order does not match ascending round numbers — playback follows save timestamps.");
+    }
+    if (skList.length > 1) warns.push("Mixed session keys across files — OK if you meant to combine sessions.");
     var evs = events;
     return {
       format: "risque-replay-v1",
       replayScope: "merged",
-      replayRounds: sorted.map(function (q) {
-        return Number(q.replayRound != null ? q.replayRound : q.round) || 0;
-      }),
+      replayRounds: replayRoundOrder,
       tapeFormatVersion: TAPE_VERSION,
       savedAt: Date.now(),
       round: headLast.round,
@@ -131,14 +216,25 @@
     if (!raw || typeof raw !== "object") return null;
     if (raw.format === "risque-replay-v1" && raw.tape && tapeVersionOk(raw.tape.v)) {
       if (!Array.isArray(raw.tape.events)) return null;
+      if (!packSavedAtMs(raw)) {
+        try {
+          raw.savedAt = Date.now();
+        } catch (eSa) {
+          /* ignore */
+        }
+      }
       return raw;
     }
     if (raw.risqueReplayTape && tapeVersionOk(raw.risqueReplayTape.v)) {
       if (!Array.isArray(raw.risqueReplayTape.events)) return null;
+      var sav =
+        packSavedAtMs(raw) ||
+        (raw.exportedAt != null && isFinite(Number(raw.exportedAt)) ? Number(raw.exportedAt) : 0) ||
+        Date.now();
       return {
         format: "risque-replay-v1",
         tapeFormatVersion: TAPE_VERSION,
-        savedAt: Date.now(),
+        savedAt: sav,
         round: raw.round,
         phase: raw.phase,
         currentPlayer: raw.currentPlayer,
@@ -432,36 +528,6 @@
     }
   }
 
-  function getLoadedRoundNumbers(sourcePacks, mergedPack) {
-    var nums = [];
-    if (mergedPack && Array.isArray(mergedPack.replayRounds) && mergedPack.replayRounds.length) {
-      nums = mergedPack.replayRounds.slice().filter(function (n) {
-        return Number(n) > 0;
-      });
-    } else if (sourcePacks && sourcePacks.length) {
-      var pi;
-      for (pi = 0; pi < sourcePacks.length; pi++) {
-        var p = sourcePacks[pi];
-        var r = Number(p && (p.replayRound != null ? p.replayRound : p.round)) || 0;
-        if (r > 0) nums.push(r);
-      }
-    }
-    nums.sort(function (a, b) {
-      return a - b;
-    });
-    var seen = {};
-    var out = [];
-    var i;
-    for (i = 0; i < nums.length; i++) {
-      var n = nums[i];
-      if (!seen[n]) {
-        seen[n] = true;
-        out.push(n);
-      }
-    }
-    return out;
-  }
-
   function updateRoundsLoadedUi(sourcePacks, mergedPack) {
     var el = document.getElementById("risque-replay-file-list");
     if (!el) return;
@@ -473,22 +539,35 @@
       el.appendChild(dash);
       return;
     }
-    var nums = getLoadedRoundNumbers(sourcePacks, mergedPack);
-    if (!nums.length) {
-      var dash2 = document.createElement("span");
-      dash2.className = "risque-replay-round-chips-empty";
-      dash2.textContent = "—";
-      el.appendChild(dash2);
-      return;
-    }
-    for (var ci = 0; ci < nums.length; ci++) {
-      var rn = nums[ci];
+    var ordered = sourcePacks.slice().sort(function (a, b) {
+      return packSavedAtMs(a) - packSavedAtMs(b);
+    });
+    var any = false;
+    var ci;
+    for (ci = 0; ci < ordered.length; ci++) {
+      var p = ordered[ci];
+      var rn = effectiveReplayRoundFromPack(p);
+      if (!rn) continue;
+      any = true;
       var btn = document.createElement("button");
       btn.type = "button";
       btn.className = "risque-replay-round-chip";
       btn.setAttribute("data-round", String(rn));
-      btn.textContent = String(rn);
+      var rSpan = document.createElement("span");
+      rSpan.className = "risque-replay-round-chip-r";
+      rSpan.textContent = "R" + String(rn);
+      var tSpan = document.createElement("span");
+      tSpan.className = "risque-replay-round-chip-t";
+      tSpan.textContent = formatReplaySavedAtChip(packSavedAtMs(p));
+      btn.appendChild(rSpan);
+      btn.appendChild(tSpan);
       el.appendChild(btn);
+    }
+    if (!any) {
+      var dash2 = document.createElement("span");
+      dash2.className = "risque-replay-round-chips-empty";
+      dash2.textContent = "—";
+      el.appendChild(dash2);
     }
   }
 
@@ -598,6 +677,7 @@
   /** STOP: end session, clear map to blank, leave JSON loaded and enable PLAY. */
   function replayStopToCleanStandby() {
     if (!window.__risqueReplayLoadedPack) return;
+    window.__risqueReplayAutoStartTok = (window.__risqueReplayAutoStartTok || 0) + 1;
     stopPlayback({ skipStatusMsg: true, silentTransport: true });
     resetReplayBoardClean();
     setTransportStandbyLoaded();
@@ -887,7 +967,7 @@
     }, scaledDelay(MS_REPLAY_START_HOLD));
   }
 
-  function prepareLoadedPack(pack, sourcePacks) {
+  function prepareLoadedPack(pack, sourcePacks, statusLineAfterOk) {
     try {
       var rawEv = pack && pack.tape && pack.tape.events;
       if (!Array.isArray(rawEv) || !rawEv.length) {
@@ -904,7 +984,7 @@
       stopPlayback({ skipStatusMsg: true, silentTransport: true });
       window.__risqueReplayLoadedPack = pack;
       resetReplayBoardClean();
-      setStatus("");
+      setStatus(statusLineAfterOk != null ? String(statusLineAfterOk) : "");
       setTransportStandbyLoaded();
       updateTransportPlayPauseUi(null);
       updateRoundsLoadedUi(sourcePacks || [pack], pack);
@@ -929,7 +1009,6 @@
     if (!playbackEvents.length) return;
     var startIdx = lowestRoundStartIndex(playbackEvents);
     runPlaybackFromPack(pack, startIdx);
-    setStatus("");
   }
 
   function readFileAsJson(file) {
@@ -956,43 +1035,66 @@
     var files = Array.prototype.slice.call(fileList, 0);
     Promise.all(
       files.map(function (f) {
-        return readFileAsJson(f);
+        return readFileAsJson(f)
+          .then(function (raw) {
+            return { ok: true, raw: raw, name: f && f.name ? f.name : "file" };
+          })
+          .catch(function () {
+            return { ok: false, raw: null, name: f && f.name ? f.name : "file" };
+          });
       })
-    )
-      .then(function (raws) {
-        var packs = [];
-        var fi;
-        for (fi = 0; fi < raws.length; fi++) {
-          var rawOne = raws[fi];
-          if (looksLikeGameBackupNotTape(rawOne)) {
-            setStatus(
-              "Wrong file type: " +
-                (files[fi] && files[fi].name ? files[fi].name : "file") +
-                " looks like a game backup. Choose the *-replay.json tape files only."
-            );
-            return;
-          }
-          var pack = normalizeImportedReplay(rawOne);
-          if (!pack) {
-            setStatus(
-              "Not a replay tape: " +
-                (files[fi] && files[fi].name ? files[fi].name : String(fi)) +
-                " (need format risque-replay-v1 with tape.events)."
-            );
-            return;
-          }
-          packs.push(pack);
+    ).then(function (results) {
+      var packs = [];
+      var skipped = [];
+      var fi;
+      for (fi = 0; fi < results.length; fi++) {
+        var res = results[fi];
+        if (!res.ok) {
+          skipped.push(res.name + " (unreadable JSON)");
+          continue;
         }
-        var toPlay = packs.length === 1 ? packs[0] : mergeReplayPacks(packs);
-        if (!toPlay || !toPlay.tape || !Array.isArray(toPlay.tape.events) || !toPlay.tape.events.length) {
-          setStatus("No events to play — empty or invalid tape after merge.");
-          return;
+        var rawOne = res.raw;
+        if (looksLikeGameBackupNotTape(rawOne)) {
+          skipped.push(res.name + " (game backup, not *-replay.json)");
+          continue;
         }
-        prepareLoadedPack(toPlay, packs);
-      })
-      .catch(function (err) {
-        setStatus("Could not read JSON: " + (err && err.message ? err.message : "error"));
-      });
+        var pack = normalizeImportedReplay(rawOne);
+        if (!pack) {
+          skipped.push(res.name + " (not a replay tape)");
+          continue;
+        }
+        packs.push(pack);
+      }
+      if (!packs.length) {
+        var failMsg =
+          skipped.length === 1
+            ? "No replay loaded — " + skipped[0]
+            : "No replay loaded. Skipped: " + skipped.join("; ");
+        setStatus(failMsg);
+        return;
+      }
+      var toPlay = packs.length === 1 ? packs[0] : mergeReplayPacks(packs);
+      if (!toPlay || !toPlay.tape || !Array.isArray(toPlay.tape.events) || !toPlay.tape.events.length) {
+        setStatus("No events to play — empty or invalid tape after merge.");
+        return;
+      }
+      var msgParts = [];
+      if (toPlay.__mergeWarnings && toPlay.__mergeWarnings.length) {
+        msgParts.push(toPlay.__mergeWarnings.join(" "));
+      }
+      if (skipped.length) {
+        msgParts.push("Skipped " + skipped.length + ": " + skipped.join("; ") + ".");
+      }
+      window.__risqueReplayAutoStartTok = (window.__risqueReplayAutoStartTok || 0) + 1;
+      var autoTok = window.__risqueReplayAutoStartTok;
+      prepareLoadedPack(toPlay, packs, msgParts.length ? msgParts.join(" ") : "");
+      if (AUTO_START_PLAYBACK_AFTER_LOAD) {
+        window.setTimeout(function () {
+          if (window.__risqueReplayAutoStartTok !== autoTok) return;
+          startPlaybackFromLoadedPack();
+        }, AUTO_START_DELAY_MS);
+      }
+    });
   }
 
   /** Center of panel at logical x=1500 from canvas left (1920×1080 space); width capped at 800px. */

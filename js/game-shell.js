@@ -23,6 +23,9 @@
   var PUBLIC_MIRROR_POLL_MS = 100;
   var MAX_ROUND_AUTOSAVES = 10;
   var SIDECAR_INDEX_KEY = "risqueSidecarIndexV1";
+  /** Survives refresh: skip duplicate round-complete / game-win exports for the same session. */
+  var AUTOSAVE_FP_ROUND_KEY = "risqueAutosaveFpRoundCompleteV1";
+  var AUTOSAVE_FP_WIN_KEY = "risqueAutosaveFpGameWinV1";
   /** In-memory only: cleared on every reload / hard refresh; round JSON writes use File System Access API. */
   var __risqueRoundAutosaveDirHandle = null;
   var __risqueRoundAutosavePickerBusy = false;
@@ -99,12 +102,30 @@
   var appEl = document.getElementById("app");
   var phaseLabelEl = document.getElementById("phaseLabel");
   var stageHost = document.querySelector(".runtime-stage-host");
-  var query = new URLSearchParams(window.location.search);
-  if (query.get("display") === "public") {
+  function risqueLocationSearchParams() {
+    try {
+      return new URL(window.location.href).searchParams;
+    } catch (eSp) {
+      return new URLSearchParams(window.location.search || "");
+    }
+  }
+  var query = risqueLocationSearchParams();
+  var displayParam = String(query.get("display") || "").toLowerCase();
+  if (displayParam === "public") {
     window.risqueDisplayIsPublic = true;
     window.risqueDisplayMode = "public";
+    try {
+      document.documentElement.classList.remove("risque-view-host");
+      document.documentElement.classList.add("risque-view-public");
+      if (document.body) {
+        document.body.classList.remove("risque-view-host");
+        document.body.classList.add("risque-view-public");
+      }
+    } catch (eCls) {
+      /* ignore */
+    }
   }
-  if (query.get("display") !== "public") {
+  if (displayParam !== "public") {
     try {
       var pLegacy = query.get("phase");
       if (pLegacy === "deploy1" || pLegacy === "deploy2") {
@@ -117,9 +138,14 @@
       }
     } catch (eLegDep) {}
   }
-  /** index.html opens the TV tab before the host navigates to login — avoid stale mirror/gameState (wrong phase/board). */
+  /**
+   * TV bootstrap: login-style placeholder until the host mirror arrives.
+   * Without tvBootstrap=1 (or when it is omitted), code used to fall through to loadState() and show the
+   * host's saved phase from localStorage — same as a second host tab (e.g. ?display=public only).
+   * Omitted tvBootstrap now defaults to on; pass tvBootstrap=0 to skip.
+   */
   var publicTvBootstrap =
-    window.risqueDisplayIsPublic && String(query.get("tvBootstrap") || "") === "1";
+    window.risqueDisplayIsPublic && String(query.get("tvBootstrap") || "1") !== "0";
   var forcedPhase = query.get("phase");
   var deployKindQuery = (query.get("kind") || "").trim().toLowerCase();
   /** Set after receive-card tablet handoff so cardplay mount does not show a second handoff. */
@@ -279,7 +305,7 @@
     typeof window.risqueLoginRecoveryUrl === "function"
       ? window.risqueLoginRecoveryUrl()
       : "game.html?phase=login&loginLegacyNext=game.html%3Fphase%3DplayerSelect%26selectKind%3DfirstCard&loginLoadRedirect=game.html%3Fphase%3Dcardplay%26legacyNext%3Dincome.html";
-  var BOARD_CORNER_TOOLS_VERSION = "13";
+  var BOARD_CORNER_TOOLS_VERSION = "15";
 
   function risqueDoc(name) {
     if (typeof window.risqueResolveDocUrl === "function") {
@@ -305,6 +331,8 @@
       localStorage.removeItem(LEDGER_KEY);
       localStorage.removeItem(GRACE_SNAPSHOTS_STORAGE_KEY);
       localStorage.removeItem("risqueReplayTapeSidecar");
+      localStorage.removeItem(AUTOSAVE_FP_ROUND_KEY);
+      localStorage.removeItem(AUTOSAVE_FP_WIN_KEY);
     } catch (eClr) {
       /* ignore */
     }
@@ -1583,50 +1611,34 @@
     });
     var postgameBlock = "";
     var isPostgame = gs && String(gs.phase || "") === "postgame";
-    if (isPostgame && sortable.length >= 2) {
-      var maxSixPctRate = -1;
-      var maxSixPctNames = [];
+    if (isPostgame && sortable.length >= 1) {
       var maxSixesVal = -1;
       var maxSixesNames = [];
+      var maxWinsVal = -1;
+      var maxWinsNames = [];
       var jh;
       for (jh = 0; jh < sortable.length; jh++) {
         var rH = sortable[jh].row;
-        var dH = Number(rH.dice) || 0;
         var sH = Number(rH.sixes) || 0;
+        var wH = Number(rH.roundWins) || 0;
         var pH = sortable[jh].pname;
-        if (dH > 0) {
-          var rateH = sH / dH;
-          if (rateH > maxSixPctRate) {
-            maxSixPctRate = rateH;
-            maxSixPctNames = [pH];
-          } else if (rateH === maxSixPctRate) {
-            maxSixPctNames.push(pH);
-          }
-        }
         if (sH > maxSixesVal) {
           maxSixesVal = sH;
           maxSixesNames = [pH];
         } else if (sH === maxSixesVal && sH > 0) {
           maxSixesNames.push(pH);
         }
+        if (wH > maxWinsVal) {
+          maxWinsVal = wH;
+          maxWinsNames = [pH];
+        } else if (wH === maxWinsVal) {
+          maxWinsNames.push(pH);
+        }
       }
       var pgParts = [];
       pgParts.push(
         '<p class="risque-host-lucky-postgame-title">Game over — luck summary</p>'
       );
-      if (maxSixPctRate >= 0 && maxSixPctNames.length) {
-        pgParts.push(
-          '<p class="risque-host-lucky-postgame-line">Best <strong>Six %</strong> (attack dice): ' +
-            maxSixPctNames
-              .map(function (n) {
-                return "<strong>" + escapeHtmlLucky(n) + "</strong>";
-              })
-              .join(", ") +
-            " — " +
-            (100 * maxSixPctRate).toFixed(1) +
-            "%</p>"
-        );
-      }
       if (maxSixesVal > 0 && maxSixesNames.length) {
         pgParts.push(
           '<p class="risque-host-lucky-postgame-line">Most <strong>sixes</strong> (total): ' +
@@ -1640,66 +1652,59 @@
             "</p>"
         );
       }
+      if (maxWinsVal >= 0 && maxWinsNames.length) {
+        pgParts.push(
+          '<p class="risque-host-lucky-postgame-line">Most <strong>wins</strong> (rounds): ' +
+            maxWinsNames
+              .map(function (n) {
+                return "<strong>" + escapeHtmlLucky(n) + "</strong>";
+              })
+              .join(", ") +
+            " — " +
+            maxWinsVal +
+            "</p>"
+        );
+      }
       if (pgParts.length > 1) {
         postgameBlock =
           '<div class="risque-host-lucky-postgame" role="status">' + pgParts.join("") + "</div>";
       }
     }
-    var rows = "";
+    var maxSixes = -1;
+    var maxWins = -1;
+    var mostSixesNames = [];
+    var mostWinsNames = [];
     for (j = 0; j < sortable.length; j++) {
-      var pname = sortable[j].pname;
-      var row = sortable[j].row;
-      var dice = Number(row.dice) || 0;
-      var sixes = Number(row.sixes) || 0;
-      var rw = Number(row.roundWins) || 0;
-      var rl = Number(row.roundLosses) || 0;
-      var rt = Number(row.roundTies) || 0;
-      var sixPct = dice > 0 ? ((100 * sixes) / dice).toFixed(1) : "—";
-      var decisive = rw + rl;
-      var winPct = decisive > 0 ? ((100 * rw) / decisive).toFixed(1) : "—";
-      rows +=
-        "<tr>" +
-        "<td>" +
-        escapeHtmlLucky(pname) +
-        "</td>" +
-        "<td>" +
-        dice +
-        "</td>" +
-        "<td>" +
-        sixes +
-        "</td>" +
-        "<td>" +
-        sixPct +
-        (sixPct === "—" ? "" : "%") +
-        "</td>" +
-        "<td>" +
-        rw +
-        "</td>" +
-        "<td>" +
-        rl +
-        "</td>" +
-        "<td>" +
-        rt +
-        "</td>" +
-        "<td>" +
-        winPct +
-        (winPct === "—" ? "" : "%") +
-        "</td>" +
-        "</tr>";
+      var pnm = sortable[j].pname;
+      var r0 = sortable[j].row || {};
+      var sixTotal = Number(r0.sixes) || 0;
+      var winTotal = Number(r0.roundWins) || 0;
+      if (sixTotal > maxSixes) {
+        maxSixes = sixTotal;
+        mostSixesNames = [pnm];
+      } else if (sixTotal === maxSixes) {
+        mostSixesNames.push(pnm);
+      }
+      if (winTotal > maxWins) {
+        maxWins = winTotal;
+        mostWinsNames = [pnm];
+      } else if (winTotal === maxWins) {
+        mostWinsNames.push(pnm);
+      }
     }
+    var mostSixesLine = mostSixesNames.length
+      ? mostSixesNames.map(function (n) { return "<strong>" + escapeHtmlLucky(n) + "</strong>"; }).join(", ")
+      : "—";
+    var mostWinsLine = mostWinsNames.length
+      ? mostWinsNames.map(function (n) { return "<strong>" + escapeHtmlLucky(n) + "</strong>"; }).join(", ")
+      : "—";
     el.innerHTML =
       '<div class="risque-host-lucky-inner hud-stats-inner">' +
-      '<p class="risque-host-lucky-lead">Attack dice only. <strong>Six %</strong> = sixes ÷ dice rolled (fair comparison across different roll counts). ' +
-      "<strong>Win %</strong> = rounds won ÷ (wins + losses); tied rounds are listed but not in the percentage. " +
-      "Rows are sorted luckiest first: highest <strong>Six %</strong>, then highest <strong>Win %</strong> (players with no dice or no decisive rounds sort lower).</p>" +
+      '<p class="risque-host-lucky-lead">Attack dice only.</p>' +
+      '<p class="risque-host-lucky-postgame-line">Most <strong>sixes</strong>: ' + mostSixesLine + " — " + (maxSixes > -1 ? String(maxSixes) : "0") + "</p>" +
+      '<p class="risque-host-lucky-postgame-line">Most <strong>wins</strong>: ' + mostWinsLine + " — " + (maxWins > -1 ? String(maxWins) : "0") + "</p>" +
       postgameBlock +
-      '<table class="hud-stats-table" aria-label="Lucky stats">' +
-      "<thead><tr>" +
-      "<th>Player</th><th>Dice</th><th>Sixes</th><th>Six %</th>" +
-      "<th>Rnd W</th><th>Rnd L</th><th>Ties</th><th>Win %</th>" +
-      "</tr></thead><tbody>" +
-      rows +
-      "</tbody></table></div>";
+      "</div>";
   }
 
   window.risqueRecordAttackRoundLedger = risqueRecordAttackRoundLedger;
@@ -5218,6 +5223,54 @@
     }
   }
 
+  function readAutosaveFpRound() {
+    try {
+      var o = tryParse(localStorage.getItem(AUTOSAVE_FP_ROUND_KEY) || "null");
+      return o && typeof o === "object" ? o : null;
+    } catch (eR) {
+      return null;
+    }
+  }
+
+  function persistAutosaveFpRound(sessionKey, completedRound) {
+    try {
+      localStorage.setItem(
+        AUTOSAVE_FP_ROUND_KEY,
+        JSON.stringify({
+          sessionKey: String(sessionKey || ""),
+          round: Math.max(0, Number(completedRound) || 0),
+          at: Date.now()
+        })
+      );
+    } catch (eP) {
+      /* ignore */
+    }
+  }
+
+  function readAutosaveFpWin() {
+    try {
+      var o = tryParse(localStorage.getItem(AUTOSAVE_FP_WIN_KEY) || "null");
+      return o && typeof o === "object" ? o : null;
+    } catch (eW) {
+      return null;
+    }
+  }
+
+  function persistAutosaveFpWin(sessionKey, winRound) {
+    try {
+      localStorage.setItem(
+        AUTOSAVE_FP_WIN_KEY,
+        JSON.stringify({
+          sessionKey: String(sessionKey || ""),
+          round: Math.max(1, Number(winRound) || 1),
+          at: Date.now()
+        })
+      );
+    } catch (ePw) {
+      /* ignore */
+    }
+  }
+
   function maybeAutosaveOnTurnCycle(prevState, nextState) {
     /* Disabled: explicit receivecard round-boundary hook is authoritative. */
     return;
@@ -5238,8 +5291,18 @@
     function write() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     }
+    function notifyStaging(s) {
+      try {
+        if (typeof window.risqueStagingNotifyPersistedState === "function") {
+          window.risqueStagingNotifyPersistedState(s);
+        }
+      } catch (eStg) {
+        /* ignore */
+      }
+    }
     try {
       write();
+      notifyStaging(state);
       return true;
     } catch (err) {
       if (err && err.name === "QuotaExceededError") {
@@ -5261,6 +5324,7 @@
         }
         try {
           write();
+          notifyStaging(state);
           return true;
         } catch (err2) {
           /* fall through */
@@ -5365,12 +5429,27 @@
    */
   window.risqueRoundAutosaveOnRoundComplete = function (gs, completedRound) {
     if (!gs || window.risqueDisplayIsPublic) return;
+    if (typeof window.risqueReplayEnsureTapeSessionKey === "function") {
+      try {
+        window.risqueReplayEnsureTapeSessionKey(gs);
+      } catch (eSk) {
+        /* ignore */
+      }
+    }
     var n = Number(completedRound) || 0;
     var fromState = (Number(gs.round) || 0) - 1;
     if (fromState > 0) {
       n = fromState;
     }
     if (n < 1) return;
+    var sk = gs.risqueReplayTapeSessionKey ? String(gs.risqueReplayTapeSessionKey) : "";
+    var fpR = readAutosaveFpRound();
+    if (sk && fpR && String(fpR.sessionKey) === sk && Number(fpR.round) === n) {
+      if (typeof window.risqueStagingClearAfterRoundCommit === "function") {
+        window.risqueStagingClearAfterRoundCommit();
+      }
+      return;
+    }
     var saveGs = gs;
     try {
       saveGs = JSON.parse(JSON.stringify(gs));
@@ -5379,20 +5458,75 @@
       /* keep original reference fallback */
     }
     saveRoundAutosaveSnapshot(saveGs);
+    if (sk) persistAutosaveFpRound(sk, n);
+    if (typeof window.risqueStagingClearAfterRoundCommit === "function") {
+      window.risqueStagingClearAfterRoundCommit();
+    }
   };
+
+  /** Immediate end-of-game autosave (host only) so final round + replay are always captured. */
+  window.risqueRoundAutosaveOnGameWin = function (gs) {
+    if (!gs || window.risqueDisplayIsPublic) return;
+    if (gs.risqueGameWinAutosaved) return;
+    if (typeof window.risqueReplayEnsureTapeSessionKey === "function") {
+      try {
+        window.risqueReplayEnsureTapeSessionKey(gs);
+      } catch (eSk2) {
+        /* ignore */
+      }
+    }
+    var winR = Math.max(1, Number(gs.round) || 1);
+    var skW = gs.risqueReplayTapeSessionKey ? String(gs.risqueReplayTapeSessionKey) : "";
+    var fpW = readAutosaveFpWin();
+    if (skW && fpW && String(fpW.sessionKey) === skW && Number(fpW.round) === winR) {
+      try {
+        gs.risqueGameWinAutosaved = true;
+      } catch (eFl2) {
+        /* ignore */
+      }
+      if (typeof window.risqueStagingClearAfterRoundCommit === "function") {
+        window.risqueStagingClearAfterRoundCommit();
+      }
+      return;
+    }
+    try {
+      gs.risqueGameWinAutosaved = true;
+    } catch (eFlag) {
+      /* ignore */
+    }
+    saveRoundAutosaveSnapshot(gs);
+    if (skW) persistAutosaveFpWin(skW, winR);
+    if (typeof window.risqueStagingClearAfterRoundCommit === "function") {
+      window.risqueStagingClearAfterRoundCommit();
+    }
+  };
+
+  function risqueAutosaveDateCompact(d) {
+    return d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate());
+  }
+
+  function risqueAutosaveTimeCompact(d) {
+    return pad2(d.getHours()) + pad2(d.getMinutes());
+  }
+
+  function risqueAutosaveBase(prefix, roundNum, whenDate) {
+    var d = whenDate instanceof Date ? whenDate : new Date();
+    var r = Math.max(1, Number(roundNum) || 1);
+    return (
+      String(prefix || "RQGS") +
+      "-r" +
+      String(r) +
+      "-" +
+      risqueAutosaveDateCompact(d) +
+      "-" +
+      risqueAutosaveTimeCompact(d)
+    );
+  }
 
   function exportBrowserRoundReplayPackJson(row, replayPack) {
     if (!row || !replayPack || replayPack.format !== "risque-replay-v1") return;
     var d = new Date(Number(row.at) || Date.now());
-    var datePart = d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
-    var rawName =
-      "RISQUE  round " +
-      (Number(row.round) || 1) +
-      "  " +
-      datePart +
-      "  " +
-      formatRisque12HourAmPm(d) +
-      "  replay tape";
+    var rawName = risqueAutosaveBase("RQRP", Number(row.round) || 1, d);
     var base = sanitizeRisqueSaveBasename(rawName);
     if (!base) base = "RISQUE-round-" + String(Number(row.round) || 1) + "-replay-tape";
     var fname = risqueSaveBasenameForFilename(base) + "-replay.json";
@@ -5429,15 +5563,7 @@
             : "";
     if (!stateJson) return;
     var d = new Date(Number(row.at) || Date.now());
-    var datePart = d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
-    var rawName =
-      "RISQUE  round " +
-      (Number(row.round) || 1) +
-      "  " +
-      datePart +
-      "  " +
-      formatRisque12HourAmPm(d) +
-      "  browser backup";
+    var rawName = risqueAutosaveBase("RQGS", Number(row.round) || 1, d);
     var base = sanitizeRisqueSaveBasename(rawName);
     if (!base) base = "RISQUE-round-" + String(Number(row.round) || 1) + "-browser-backup";
     var fname = risqueSaveBasenameForFilename(base) + ".json";
@@ -5617,8 +5743,7 @@
     if (!dir || !gs) return Promise.resolve(false);
     if (typeof dir.getFileHandle !== "function") return Promise.resolve(false);
     var d = new Date();
-    var datePart = d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
-    var rawName = "RISQUE  round " + (Number(gs.round) || 1) + "  " + datePart + "  " + formatRisque12HourAmPm(d);
+    var rawName = risqueAutosaveBase("RQGS", Number(gs.round) || 1, d);
     var base = sanitizeRisqueSaveBasename(rawName);
     if (!base) {
       base = "RISQUE-round-" + String(Number(gs.round) || 1);
@@ -5795,8 +5920,11 @@
       window.gameUtils.clearContinentalConquestRoutingOnTurnAdvance(state);
     }
     if (nextIndex === 0) {
-      state.round += 1;
-      saveRoundAutosaveSnapshot(state);
+      var completedRoundAdv = Number(state.round) || 1;
+      state.round = completedRoundAdv + 1;
+      if (typeof window.risqueRoundAutosaveOnRoundComplete === "function") {
+        window.risqueRoundAutosaveOnRoundComplete(state, completedRoundAdv);
+      }
     }
     state.phase = "cardplay";
     state.cardEarnedViaAttack = false;
@@ -6234,6 +6362,52 @@
     });
   }
 
+  /**
+   * risqueAutoPublic=1: popup blockers reject window.open from timers.
+   * Strip the flag and open TV on first real click (user activation).
+   */
+  function scheduleRisqueAutoPublicFromQueryOnce() {
+    if (window.risqueDisplayIsPublic) return;
+    if (window.__risqueAutoPublicArmed) return;
+    try {
+      var q = risqueLocationSearchParams();
+      if (q.get("risqueAutoPublic") !== "1") return;
+      window.__risqueAutoPublicArmed = true;
+      q.delete("risqueAutoPublic");
+      var next =
+        window.location.pathname + (q.toString() ? "?" + q.toString() : "") + window.location.hash;
+      history.replaceState(null, "", next);
+    } catch (eAutoPub) {
+      return;
+    }
+    var hint = document.createElement("div");
+    hint.id = "risque-auto-public-hint";
+    hint.setAttribute("role", "status");
+    hint.textContent = "Click anywhere to open the TV / public window (browser blocks auto-popups).";
+    hint.style.cssText =
+      "position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:2147483646;" +
+      "max-width:min(520px,92vw);background:#14532d;color:#ecfdf5;padding:12px 18px;" +
+      "border-radius:10px;font:600 14px Arial,Helvetica,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.45);" +
+      "text-align:center;pointer-events:none";
+    document.body.appendChild(hint);
+    function onFirstPointer() {
+      document.removeEventListener("pointerdown", onFirstPointer, true);
+      try {
+        if (hint.parentNode) hint.parentNode.removeChild(hint);
+      } catch (eH) {
+        /* ignore */
+      }
+      if (typeof window.risqueOpenPublicDisplayWindow === "function") {
+        try {
+          window.risqueOpenPublicDisplayWindow();
+        } catch (eOpen) {
+          /* ignore */
+        }
+      }
+    }
+    document.addEventListener("pointerdown", onFirstPointer, true);
+  }
+
   function render(state, notice) {
     phaseLabelEl.textContent = "Phase: " + (state.phase || "unknown");
     syncPhaseDataAttr(state);
@@ -6278,6 +6452,7 @@
             });
           });
         }
+        scheduleRisqueAutoPublicFromQueryOnce();
       }
       return;
     }

@@ -184,10 +184,18 @@
 
       if (!/\bmenu=1\b/.test(location.search)) {
         /* Same tab as "Host login only" — no auto pop-up (often blocked). Open public TV yourself if needed. */
+        var dest = gameLoginUrl();
         try {
-          window.location.replace(gameLoginUrl());
+          if (new URLSearchParams(location.search).get("risqueAutoPublic") === "1") {
+            dest += (dest.indexOf("?") >= 0 ? "&" : "?") + "risqueAutoPublic=1";
+          }
+        } catch (eAp) {
+          /* ignore */
+        }
+        try {
+          window.location.replace(dest);
         } catch (eLoc) {
-          window.location.href = gameLoginUrl();
+          window.location.href = dest;
         }
         return;
       }

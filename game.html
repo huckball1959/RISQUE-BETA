@@ -21,8 +21,10 @@
   <script>
     (function () {
       try {
-        var q = new URLSearchParams(window.location.search);
-        window.risqueDisplayIsPublic = q.get("display") === "public";
+        /* file://: some builds expose an empty location.search while href still has ?display=public — use URL(href). */
+        var q = new URL(window.location.href).searchParams;
+        var disp = String(q.get("display") || "").toLowerCase();
+        window.risqueDisplayIsPublic = disp === "public";
         window.risqueDisplayMode = window.risqueDisplayIsPublic ? "public" : "host";
       } catch (e) {
         window.risqueDisplayIsPublic = false;
@@ -36,7 +38,7 @@
       background-color: #000;
     }
   </style>
-  <link rel="stylesheet" href="game.css?v=public-cp-shelf-no-plate-2026-04-28" />
+  <link rel="stylesheet" href="game.css?v=reinforce-footer-attack-only-2026-04-29" />
   <script>
     (function () {
       try {
@@ -189,7 +191,7 @@
   <script>
     (function () {
       try {
-        var q = new URLSearchParams(window.location.search);
+        var q = new URL(window.location.href).searchParams;
         var p = q.get("phase");
         /* Match html root: avoid slate flash before login UI paints */
         if (p === "login") {
@@ -234,7 +236,7 @@
     (function () {
       try {
         if (window.risqueDisplayIsPublic) return;
-        var q = new URLSearchParams(window.location.search);
+        var q = new URL(window.location.href).searchParams;
         if (q.get("postReceive") !== "1") return;
         if (sessionStorage.getItem("risquePostReceiveCardplayBlackout") !== "1") return;
         if (document.getElementById("risque-post-receive-blackout")) return;
@@ -296,10 +298,133 @@
 
   <div id="risque-public-tv-bar" class="risque-public-tv-bar" aria-label="Public display">
     <span class="risque-public-tv-bar-label">TV view</span>
+    <button
+      type="button"
+      id="risque-public-fullscreen-btn"
+      class="risque-public-fullscreen-btn"
+      title="Fill the screen (browser fullscreen, like F11)"
+    >
+      Fullscreen
+    </button>
   </div>
+  <script>
+    (function () {
+      if (!window.risqueDisplayIsPublic) return;
+
+      var TV_PING_STORAGE_KEY = "risquePublicTvCommand";
+
+      function wirePublicFullscreen() {
+        var btn = document.getElementById("risque-public-fullscreen-btn");
+        var bar = document.getElementById("risque-public-tv-bar");
+        if (!btn) return;
+
+        function syncLabel() {
+          var fs = document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement;
+          btn.textContent = fs ? "Exit fullscreen" : "Fullscreen";
+          btn.setAttribute("aria-pressed", fs ? "true" : "false");
+          if (bar && fs) bar.removeAttribute("data-risque-pending-fullscreen");
+        }
+
+        function requestFullscreenDoc() {
+          var doc = document.documentElement;
+          var req = doc.requestFullscreen || doc.webkitRequestFullscreen || doc.msRequestFullscreen;
+          if (!req) return Promise.reject();
+          return Promise.resolve(req.call(doc)).then(syncLabel);
+        }
+
+        function exitFullscreenDoc() {
+          var ex = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
+          if (!ex) return Promise.resolve();
+          return Promise.resolve(ex.call(document)).then(syncLabel);
+        }
+
+        function toggleFullscreenFromGesture() {
+          var fs = document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement;
+          if (!fs) {
+            return requestFullscreenDoc().catch(function () {});
+          }
+          return exitFullscreenDoc().catch(function () {});
+        }
+
+        btn.addEventListener("click", function () {
+          toggleFullscreenFromGesture();
+        });
+
+        document.addEventListener("fullscreenchange", syncLabel);
+        document.addEventListener("webkitfullscreenchange", syncLabel);
+        document.addEventListener("MSFullscreenChange", syncLabel);
+        syncLabel();
+
+        function setPendingFullscreenUi(on) {
+          if (!bar) return;
+          if (on) bar.setAttribute("data-risque-pending-fullscreen", "1");
+          else bar.removeAttribute("data-risque-pending-fullscreen");
+        }
+
+        function armOneClickFullscreen() {
+          setPendingFullscreenUi(true);
+          function onFirstPointer() {
+            document.removeEventListener("pointerdown", onFirstPointer, true);
+            setPendingFullscreenUi(false);
+            var fs = document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement;
+            if (!fs) {
+              requestFullscreenDoc().catch(function () {});
+            }
+          }
+          document.addEventListener("pointerdown", onFirstPointer, true);
+        }
+
+        function consumeTvFullscreenQuery() {
+          try {
+            var u = new URL(window.location.href);
+            if (u.searchParams.get("risqueTvFullscreen") !== "1" && u.searchParams.get("tvFullscreen") !== "1") {
+              return false;
+            }
+            u.searchParams.delete("risqueTvFullscreen");
+            u.searchParams.delete("tvFullscreen");
+            var next = u.pathname + u.search + u.hash;
+            history.replaceState(null, "", next);
+            return true;
+          } catch (e) {
+            return false;
+          }
+        }
+
+        if (consumeTvFullscreenQuery()) {
+          armOneClickFullscreen();
+        }
+
+        function isHttpLike() {
+          return window.location.protocol === "http:" || window.location.protocol === "https:";
+        }
+
+        if (isHttpLike()) {
+          window.addEventListener("storage", function (ev) {
+            if (!ev.key || ev.key !== TV_PING_STORAGE_KEY) return;
+            var raw = ev.newValue;
+            if (!raw) return;
+            try {
+              var o = JSON.parse(raw);
+              if (!o || String(o.action || "") !== "fullscreen") return;
+            } catch (eSt) {
+              return;
+            }
+            armOneClickFullscreen();
+          });
+        }
+      }
+
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", wirePublicFullscreen);
+      } else {
+        wirePublicFullscreen();
+      }
+    })();
+  </script>
 
   <script src="js/core.js?v=std-income-meta-syntaxfix-2026-04-27f"></script>
   <script src="js/replay-tape.js?v=replay-by-round-2026-04-28"></script>
+  <script src="js/risque-session-staging.js?v=staging-disk-opt-in-2026-04-29"></script>
   <script src="js/risque-external-urls.js"></script>
   <script src="phases/login.js?v=login-centered-public-move-button-2026-04-27c"></script>
   <script src="phases/privacy-gate.js?v=handoff-nav-order-2026-04-26"></script>
@@ -319,6 +444,6 @@
   <script src="phases/receivecard.js?v=receivecard-postreceive-vt-2026-04-26b"></script>
   <script src="phases/postgame.js?v=replay-merge-postgame-2026-04-19"></script>
   <script src="phases/conquer-phase.js?v=conquer-runtime-2026-04-13"></script>
-  <script src="js/game-shell.js?v=public-cp-shelf-wildcard-single-2026-04-28"></script>
+  <script src="js/game-shell.js?v=staging-hooks-2026-04-29"></script>
 </body>
 </html>

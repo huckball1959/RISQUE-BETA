@@ -314,4 +314,9 @@
       /* ignore */
     }
   };
+
+  /** Idempotent session id for replay + autosave dedup (persists on game state). */
+  window.risqueReplayEnsureTapeSessionKey = function (gs) {
+    ensureReplayTapeSessionKey(gs);
+  };
 })();

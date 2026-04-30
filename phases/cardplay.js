@@ -1424,8 +1424,8 @@
         { id: "play-card-button", enabled: hasCards, handler: handlePlayCard },
         { id: "select-cards-button", enabled: canFormBook, handler: handleSelectCards },
         { id: "reset-button", enabled: false, handler: handleReset },
-        { id: "next-phase-button", enabled: !hasCards || unplayedCards.length <= 4, handler: handleNextPhase },
-        { id: "cardplay-panel-confirm-btn", enabled: !hasCards || unplayedCards.length <= 4, handler: handleNextPhase }
+        { id: "next-phase-button", enabled: false, handler: handleNextPhase },
+        { id: "cardplay-panel-confirm-btn", enabled: false, handler: handleNextPhase }
       ];
       buttons.forEach(button => {
         const el = document.getElementById(button.id);
@@ -2278,6 +2278,7 @@
       const unplayedCards = getUnplayedCards();
       const canFormBook = unplayedCards.length >= 3 && canFormValidBook(unplayedCards);
       const hasUnconfirmedActions = playedCards.some(pc => !pc.confirmed);
+      const hasCardActions = playedCards.length > 0;
       const playCardButton = document.getElementById('play-card-button');
       const selectCardsButton = document.getElementById('select-cards-button');
       const resetButton = document.getElementById('reset-button');
@@ -2296,7 +2297,7 @@
       }
       var holdConfirm = cardplayConfirmShouldBeHeld();
       if (nextPhaseButton) {
-        var nextOk = unplayedCards.length <= 4 && !holdConfirm;
+        var nextOk = hasCardActions && unplayedCards.length <= 4 && !holdConfirm;
         nextPhaseButton.disabled = !nextOk;
         nextPhaseButton.classList.toggle('enabled', nextOk);
       }
